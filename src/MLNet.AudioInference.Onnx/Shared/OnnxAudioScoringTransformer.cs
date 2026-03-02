@@ -10,15 +10,15 @@ namespace MLNet.AudioInference.Onnx;
 /// Stage 2 sub-transform: runs ONNX model inference on extracted features.
 /// Produces raw model output scores as VBuffer&lt;float&gt;.
 /// </summary>
-public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
+public sealed class OnnxAudioScoringTransformer : ITransformer, IDisposable
 {
-    private readonly OnnxAudioScorerOptions _options;
+    private readonly OnnxAudioScoringOptions _options;
     private readonly InferenceSession _session;
     private readonly string _inputTensorName;
     private readonly string _outputTensorName;
     private bool _disposed;
 
-    internal OnnxAudioScorerOptions Options => _options;
+    internal OnnxAudioScoringOptions Options => _options;
 
     /// <summary>Hidden dimension discovered from the ONNX model output shape.</summary>
     public int HiddenDim { get; }
@@ -28,7 +28,7 @@ public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
 
     public bool IsRowToRowMapper => true;
 
-    internal OnnxAudioScorerTransformer(IHostEnvironment env, OnnxAudioScorerOptions options)
+    internal OnnxAudioScoringTransformer(IHostEnvironment env, OnnxAudioScoringOptions options)
     {
         _options = options;
 
@@ -131,13 +131,13 @@ public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
     private sealed class AudioScorerDataView : IDataView
     {
         private readonly IDataView _input;
-        private readonly OnnxAudioScorerTransformer _scorer;
+        private readonly OnnxAudioScoringTransformer _scorer;
 
         public DataViewSchema Schema { get; }
         public bool CanShuffle => false;
         public long? GetRowCount() => _input.GetRowCount();
 
-        internal AudioScorerDataView(IDataView input, OnnxAudioScorerTransformer scorer)
+        internal AudioScorerDataView(IDataView input, OnnxAudioScoringTransformer scorer)
         {
             _input = input;
             _scorer = scorer;
@@ -176,7 +176,7 @@ public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
     {
         private readonly AudioScorerDataView _dataView;
         private readonly DataViewRowCursor _inputCursor;
-        private readonly OnnxAudioScorerTransformer _scorer;
+        private readonly OnnxAudioScoringTransformer _scorer;
         private readonly int _outputColIndex;
 
         private float[]? _currentScores;
@@ -186,7 +186,7 @@ public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
         internal AudioScorerCursor(
             AudioScorerDataView dataView,
             DataViewRowCursor inputCursor,
-            OnnxAudioScorerTransformer scorer)
+            OnnxAudioScoringTransformer scorer)
         {
             _dataView = dataView;
             _inputCursor = inputCursor;

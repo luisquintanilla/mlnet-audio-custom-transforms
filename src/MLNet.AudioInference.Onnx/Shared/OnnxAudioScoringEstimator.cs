@@ -7,7 +7,7 @@ namespace MLNet.AudioInference.Onnx;
 /// <summary>
 /// Options for the ONNX audio model scorer sub-transform.
 /// </summary>
-public class OnnxAudioScorerOptions
+public class OnnxAudioScoringOptions
 {
     /// <summary>Path to ONNX model file.</summary>
     public required string ModelPath { get; set; }
@@ -29,23 +29,23 @@ public class OnnxAudioScorerOptions
 }
 
 /// <summary>
-/// Estimator that creates an OnnxAudioScorerTransformer.
+/// Estimator that creates an OnnxAudioScoringTransformer.
 /// Stage 2 of the composed audio pipeline: features → raw ONNX output scores.
 /// </summary>
-public sealed class OnnxAudioScorerEstimator : IEstimator<OnnxAudioScorerTransformer>
+public sealed class OnnxAudioScoringEstimator : IEstimator<OnnxAudioScoringTransformer>
 {
     private readonly IHostEnvironment _env;
-    private readonly OnnxAudioScorerOptions _options;
+    private readonly OnnxAudioScoringOptions _options;
 
-    public OnnxAudioScorerEstimator(IHostEnvironment env, OnnxAudioScorerOptions options)
+    public OnnxAudioScoringEstimator(IHostEnvironment env, OnnxAudioScoringOptions options)
     {
         _env = env;
         _options = options;
     }
 
-    public OnnxAudioScorerTransformer Fit(IDataView input)
+    public OnnxAudioScoringTransformer Fit(IDataView input)
     {
-        return new OnnxAudioScorerTransformer(_env, _options);
+        return new OnnxAudioScoringTransformer(_env, _options);
     }
 
     public SchemaShape GetOutputSchema(SchemaShape inputSchema)

@@ -32,15 +32,15 @@ ML.NET `IEstimator<T>`/`ITransformer` implementations for all audio tasks.
 
 | Subdirectory | Types | Description |
 |--------------|-------|-------------|
-| Classification/ | `OnnxAudioClassificationEstimator`, `OnnxAudioClassificationTransformer`, `OnnxAudioClassificationOptions`, `AudioClassificationPostProcessEstimator`, `AudioClassificationPostProcessTransformer` | Audio classification with softmax + label mapping |
-| Embeddings/ | `OnnxAudioEmbeddingEstimator`, `OnnxAudioEmbeddingTransformer`, `OnnxAudioEmbeddingOptions`, `AudioPoolingStrategy`, `AudioEmbeddingPoolerEstimator`, `AudioEmbeddingPoolerTransformer` | Audio embeddings with pooling (MeanPooling, ClsToken, MaxPooling) + L2 normalization |
+| Classification/ | `OnnxAudioClassificationEstimator`, `OnnxAudioClassificationTransformer`, `OnnxAudioClassificationOptions`, `AudioClassificationPostProcessingEstimator`, `AudioClassificationPostProcessingTransformer` | Audio classification with softmax + label mapping |
+| Embeddings/ | `OnnxAudioEmbeddingEstimator`, `OnnxAudioEmbeddingTransformer`, `OnnxAudioEmbeddingOptions`, `AudioPoolingStrategy`, `AudioEmbeddingPoolingEstimator`, `AudioEmbeddingPoolingTransformer` | Audio embeddings with pooling (MeanPooling, ClsToken, MaxPooling) + L2 normalization |
 | VAD/ | `OnnxVadEstimator`, `OnnxVadTransformer`, `OnnxVadOptions`, `IVoiceActivityDetector`, `SpeechSegment`, `VadOptions` | Voice activity detection with frame scoring + segment merging. `OnnxVadTransformer` implements both `ITransformer` and `IVoiceActivityDetector` |
 | ASR/ | `SpeechToTextClientEstimator`, `SpeechToTextClientTransformer`, `SpeechToTextClientOptions` | Provider-agnostic ASR wrapping any `ISpeechToTextClient` |
 | ASR/ | `OnnxWhisperEstimator`, `OnnxWhisperTransformer`, `OnnxWhisperOptions`, `WhisperKvCacheManager` | Raw ONNX Whisper with manual encoder/decoder/KV cache management |
 | TTS/ | `OnnxSpeechT5TtsEstimator`, `OnnxSpeechT5TtsTransformer`, `OnnxSpeechT5Options` | SpeechT5 text-to-speech: encoder → decoder (KV cache) → vocoder |
 | TTS/ | `ITextToSpeechClient`, `OnnxTextToSpeechClient`, `TextToSpeechResponse`, `TextToSpeechResponseUpdate`, `TextToSpeechOptions`, `TextToSpeechClientMetadata` | MEAI-style TTS interface (prototype — MEAI doesn't have this yet) |
 | MEAI/ | `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` bridge to MEAI |
-| Shared/ | `AudioFeatureExtractionEstimator`, `AudioFeatureExtractionTransformer`, `OnnxAudioScorerEstimator`, `OnnxAudioScorerTransformer`, `EnCodecTokenizer` | Reusable sub-transforms for the composed 3-stage pipeline. Feature extraction (Stage 1) and ONNX scoring (Stage 2) are shared across classification and embeddings |
+| Shared/ | `AudioFeatureExtractionEstimator`, `AudioFeatureExtractionTransformer`, `OnnxAudioScoringEstimator`, `OnnxAudioScoringTransformer`, `EnCodecTokenizer` | Reusable sub-transforms for the composed 3-stage pipeline. Feature extraction (Stage 1) and ONNX scoring (Stage 2) are shared across classification and embeddings |
 
 **Entry points** via `MLContextExtensions`:
 
@@ -101,8 +101,8 @@ Stage 3: Post-processing      (model output → typed result)
 For encoder-only transforms, these stages are implemented as **separate, composable sub-transforms** chained via lazy `IDataView`:
 
 - **Stage 1:** `AudioFeatureExtractionTransformer` — audio PCM → mel spectrogram features
-- **Stage 2:** `OnnxAudioScorerTransformer` — features → raw ONNX model output
-- **Stage 3:** Task-specific post-processor (`AudioClassificationPostProcessTransformer` or `AudioEmbeddingPoolerTransformer`)
+- **Stage 2:** `OnnxAudioScoringTransformer` — features → raw ONNX model output
+- **Stage 3:** Task-specific post-processor (`AudioClassificationPostProcessingTransformer` or `AudioEmbeddingPoolingTransformer`)
 
 The facade `Fit()` chains these sub-estimators, and the facade `Transform()` chains the resulting sub-transformers. Each sub-transform wraps its output in a lazy `IDataView` — no computation occurs until the cursor is iterated.
 

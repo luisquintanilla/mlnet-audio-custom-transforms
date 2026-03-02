@@ -100,7 +100,7 @@ public sealed class MyModelTransformer : ITransformer, IDisposable
     private readonly MLContext _mlContext;
     private readonly MyModelOptions _options;
     private readonly AudioFeatureExtractionTransformer _featureTransformer;
-    private readonly OnnxAudioScorerTransformer _scorerTransformer;
+    private readonly OnnxAudioScoringTransformer _scorerTransformer;
     private readonly MyPostProcessTransformer _postProcessTransformer;
 
     public bool IsRowToRowMapper => true;
@@ -109,7 +109,7 @@ public sealed class MyModelTransformer : ITransformer, IDisposable
         MLContext mlContext,
         MyModelOptions options,
         AudioFeatureExtractionTransformer featureTransformer,
-        OnnxAudioScorerTransformer scorerTransformer,
+        OnnxAudioScoringTransformer scorerTransformer,
         MyPostProcessTransformer postProcessTransformer)
     {
         _mlContext = mlContext;
@@ -165,10 +165,10 @@ public sealed class MyModelTransformer : ITransformer, IDisposable
 ```
 
 Key implementation notes:
-- Use the **composed lazy pattern**: `Transform()` chains 3 sub-transforms (`AudioFeatureExtractionTransformer` → `OnnxAudioScorerTransformer` → post-process), each lazy over the `IDataView`. This is the pattern used by all encoder-only transforms in this framework.
+- Use the **composed lazy pattern**: `Transform()` chains 3 sub-transforms (`AudioFeatureExtractionTransformer` → `OnnxAudioScoringTransformer` → post-process), each lazy over the `IDataView`. This is the pattern used by all encoder-only transforms in this framework.
 - Encoder-decoder transforms (ASR, TTS) use **eager evaluation** instead, because autoregressive decoding loops don't decompose into lazy sub-transforms.
 - Provide a **direct API** method (like `Classify()` or `GenerateEmbeddings()`) for use outside ML.NET pipelines. Direct convenience APIs are always eager.
-- The composed transformer **does not** manage `InferenceSession` directly — that's handled by `OnnxAudioScorerTransformer`.
+- The composed transformer **does not** manage `InferenceSession` directly — that's handled by `OnnxAudioScoringTransformer`.
 
 ### Step 4: Create an Estimator
 
@@ -209,8 +209,8 @@ public sealed class MyModelEstimator : IEstimator<MyModelTransformer>
 
         // Stage 2: ONNX scoring (features → raw model output)
         var featuredData = featureTransformer.Transform(input);
-        var scorerEstimator = new OnnxAudioScorerEstimator(env,
-            new OnnxAudioScorerOptions { ModelPath = _options.ModelPath, /* ... */ });
+        var scorerEstimator = new OnnxAudioScoringEstimator(env,
+            new OnnxAudioScoringOptions { ModelPath = _options.ModelPath, /* ... */ });
         var scorerTransformer = scorerEstimator.Fit(featuredData);
 
         // Stage 3: Task-specific post-processing (raw scores → final output)

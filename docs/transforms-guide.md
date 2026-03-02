@@ -42,8 +42,8 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 > **Internal pipeline:** The `OnnxAudioClassificationTransformer` facade composes three sub-transforms:
 >
 > 1. **Stage 1:** `AudioFeatureExtractionTransformer` — converts raw audio into mel spectrogram features
-> 2. **Stage 2:** `OnnxAudioScorerTransformer` — runs the ONNX model on extracted features to produce raw output logits
-> 3. **Stage 3:** `AudioClassificationPostProcessTransformer` — applies softmax, argmax, and label mapping to produce predicted labels and probabilities
+> 2. **Stage 2:** `OnnxAudioScoringTransformer` — runs the ONNX model on extracted features to produce raw output logits
+> 3. **Stage 3:** `AudioClassificationPostProcessingTransformer` — applies softmax, argmax, and label mapping to produce predicted labels and probabilities
 
 ### Key Types
 
@@ -54,8 +54,8 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 | `OnnxAudioClassificationOptions` | All configuration properties |
 | `AudioClassificationResult` | Structured output from the direct `Classify` API |
 | `AudioFeatureExtractionTransformer` | Stage 1 sub-transform — audio → mel features |
-| `OnnxAudioScorerTransformer` | Stage 2 sub-transform — features → ONNX output |
-| `AudioClassificationPostProcessTransformer` | Stage 3 sub-transform — scores → labels + probabilities |
+| `OnnxAudioScoringTransformer` | Stage 2 sub-transform — features → ONNX output |
+| `AudioClassificationPostProcessingTransformer` | Stage 3 sub-transform — scores → labels + probabilities |
 
 ### Options
 
@@ -161,8 +161,8 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 > **Internal pipeline:** The `OnnxAudioEmbeddingTransformer` facade composes three sub-transforms:
 >
 > 1. **Stage 1:** `AudioFeatureExtractionTransformer` — converts raw audio into mel spectrogram features
-> 2. **Stage 2:** `OnnxAudioScorerTransformer` — runs the ONNX model on extracted features to produce hidden states
-> 3. **Stage 3:** `AudioEmbeddingPoolerTransformer` — applies pooling strategy and optional L2 normalization to produce the final embedding vector
+> 2. **Stage 2:** `OnnxAudioScoringTransformer` — runs the ONNX model on extracted features to produce hidden states
+> 3. **Stage 3:** `AudioEmbeddingPoolingTransformer` — applies pooling strategy and optional L2 normalization to produce the final embedding vector
 
 ### Key Types
 
@@ -174,8 +174,8 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 | `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` — MEAI integration |
 | `AudioPoolingStrategy` | Enum: `MeanPooling`, `MaxPooling`, `ClsToken` |
 | `AudioFeatureExtractionTransformer` | Stage 1 sub-transform — audio → mel features |
-| `OnnxAudioScorerTransformer` | Stage 2 sub-transform — features → ONNX output |
-| `AudioEmbeddingPoolerTransformer` | Stage 3 sub-transform — pooling + normalization → embedding |
+| `OnnxAudioScoringTransformer` | Stage 2 sub-transform — features → ONNX output |
+| `AudioEmbeddingPoolingTransformer` | Stage 3 sub-transform — pooling + normalization → embedding |
 
 ### Options
 

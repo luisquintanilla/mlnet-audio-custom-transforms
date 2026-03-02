@@ -46,7 +46,7 @@ public sealed class OnnxAudioClassificationEstimator : IEstimator<OnnxAudioClass
 
         // Stage 2: ONNX scoring
         var featuredData = featureTransformer.Transform(input);
-        var scorerOptions = new OnnxAudioScorerOptions
+        var scorerOptions = new OnnxAudioScoringOptions
         {
             ModelPath = _options.ModelPath,
             InputColumnName = "Features",
@@ -55,12 +55,12 @@ public sealed class OnnxAudioClassificationEstimator : IEstimator<OnnxAudioClass
             OutputTensorName = _options.OutputTensorName,
             GpuDeviceId = _options.GpuDeviceId
         };
-        var scorerEstimator = new OnnxAudioScorerEstimator(env, scorerOptions);
+        var scorerEstimator = new OnnxAudioScoringEstimator(env, scorerOptions);
         var scorerTransformer = scorerEstimator.Fit(featuredData);
 
         // Stage 3: Classification post-processing
         var scoredData = scorerTransformer.Transform(featuredData);
-        var postProcessOptions = new AudioClassificationPostProcessOptions
+        var postProcessOptions = new AudioClassificationPostProcessingOptions
         {
             Labels = _options.Labels,
             InputColumnName = "Scores",
@@ -68,7 +68,7 @@ public sealed class OnnxAudioClassificationEstimator : IEstimator<OnnxAudioClass
             ProbabilitiesColumnName = _options.ProbabilitiesColumnName,
             ScoreColumnName = _options.ScoreColumnName
         };
-        var postProcessEstimator = new AudioClassificationPostProcessEstimator(env, postProcessOptions);
+        var postProcessEstimator = new AudioClassificationPostProcessingEstimator(env, postProcessOptions);
         var postProcessTransformer = postProcessEstimator.Fit(scoredData);
 
         return new OnnxAudioClassificationTransformer(

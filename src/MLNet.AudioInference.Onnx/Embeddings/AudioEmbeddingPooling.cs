@@ -8,7 +8,7 @@ namespace MLNet.AudioInference.Onnx;
 /// <summary>
 /// Options for audio embedding pooling post-processing.
 /// </summary>
-public class AudioEmbeddingPoolerOptions
+public class AudioEmbeddingPoolingOptions
 {
     /// <summary>Name of the input column containing raw ONNX scores (VBuffer&lt;float&gt;).</summary>
     public string InputColumnName { get; set; } = "Scores";
@@ -32,18 +32,18 @@ public class AudioEmbeddingPoolerOptions
 /// <summary>
 /// Estimator for audio embedding pooling (Stage 3).
 /// </summary>
-public sealed class AudioEmbeddingPoolerEstimator : IEstimator<AudioEmbeddingPoolerTransformer>
+public sealed class AudioEmbeddingPoolingEstimator : IEstimator<AudioEmbeddingPoolingTransformer>
 {
     private readonly IHostEnvironment _env;
-    private readonly AudioEmbeddingPoolerOptions _options;
+    private readonly AudioEmbeddingPoolingOptions _options;
 
-    public AudioEmbeddingPoolerEstimator(IHostEnvironment env, AudioEmbeddingPoolerOptions options)
+    public AudioEmbeddingPoolingEstimator(IHostEnvironment env, AudioEmbeddingPoolingOptions options)
     {
         _env = env;
         _options = options;
     }
 
-    public AudioEmbeddingPoolerTransformer Fit(IDataView input)
+    public AudioEmbeddingPoolingTransformer Fit(IDataView input)
     {
         var effectiveOptions = _options;
 
@@ -65,7 +65,7 @@ public sealed class AudioEmbeddingPoolerEstimator : IEstimator<AudioEmbeddingPoo
                     if (pooledCol.HasValue)
                         annotations.GetValue("HasPooledOutput", ref hasPooledOutput);
 
-                    effectiveOptions = new AudioEmbeddingPoolerOptions
+                    effectiveOptions = new AudioEmbeddingPoolingOptions
                     {
                         InputColumnName = _options.InputColumnName,
                         OutputColumnName = _options.OutputColumnName,
@@ -78,7 +78,7 @@ public sealed class AudioEmbeddingPoolerEstimator : IEstimator<AudioEmbeddingPoo
             }
         }
 
-        return new AudioEmbeddingPoolerTransformer(_env, effectiveOptions);
+        return new AudioEmbeddingPoolingTransformer(_env, effectiveOptions);
     }
 
     public SchemaShape GetOutputSchema(SchemaShape inputSchema)
@@ -100,14 +100,14 @@ public sealed class AudioEmbeddingPoolerEstimator : IEstimator<AudioEmbeddingPoo
 /// <summary>
 /// Stage 3 sub-transform for embeddings: pooling (mean/CLS/max) + optional L2 normalization.
 /// </summary>
-public sealed class AudioEmbeddingPoolerTransformer : ITransformer, IDisposable
+public sealed class AudioEmbeddingPoolingTransformer : ITransformer, IDisposable
 {
-    private readonly AudioEmbeddingPoolerOptions _options;
-    internal AudioEmbeddingPoolerOptions Options => _options;
+    private readonly AudioEmbeddingPoolingOptions _options;
+    internal AudioEmbeddingPoolingOptions Options => _options;
 
     public bool IsRowToRowMapper => true;
 
-    internal AudioEmbeddingPoolerTransformer(IHostEnvironment env, AudioEmbeddingPoolerOptions options)
+    internal AudioEmbeddingPoolingTransformer(IHostEnvironment env, AudioEmbeddingPoolingOptions options)
     {
         _options = options;
     }
@@ -199,13 +199,13 @@ public sealed class AudioEmbeddingPoolerTransformer : ITransformer, IDisposable
     private sealed class PoolerDataView : IDataView
     {
         private readonly IDataView _input;
-        private readonly AudioEmbeddingPoolerTransformer _transformer;
+        private readonly AudioEmbeddingPoolingTransformer _transformer;
 
         public DataViewSchema Schema { get; }
         public bool CanShuffle => false;
         public long? GetRowCount() => _input.GetRowCount();
 
-        internal PoolerDataView(IDataView input, AudioEmbeddingPoolerTransformer transformer)
+        internal PoolerDataView(IDataView input, AudioEmbeddingPoolingTransformer transformer)
         {
             _input = input;
             _transformer = transformer;
@@ -238,7 +238,7 @@ public sealed class AudioEmbeddingPoolerTransformer : ITransformer, IDisposable
     {
         private readonly PoolerDataView _dataView;
         private readonly DataViewRowCursor _inputCursor;
-        private readonly AudioEmbeddingPoolerTransformer _transformer;
+        private readonly AudioEmbeddingPoolingTransformer _transformer;
         private readonly int _outputColIndex;
 
         private float[]? _currentEmbedding;
@@ -248,7 +248,7 @@ public sealed class AudioEmbeddingPoolerTransformer : ITransformer, IDisposable
         internal PoolerCursor(
             PoolerDataView dataView,
             DataViewRowCursor inputCursor,
-            AudioEmbeddingPoolerTransformer transformer)
+            AudioEmbeddingPoolingTransformer transformer)
         {
             _dataView = dataView;
             _inputCursor = inputCursor;

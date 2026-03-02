@@ -105,10 +105,10 @@ var composedPipeline = new AudioFeatureExtractionEstimator(mlContext,
             FeatureExtractor = new MelSpectrogramExtractor(sampleRate: 16000) { NumMelBins = 128, FftSize = 400, HopLength = 160 },
             SampleRate = 16000
         })
-    .Append(new OnnxAudioScorerEstimator(mlContext,
-        new OnnxAudioScorerOptions { ModelPath = modelPath }))
-    .Append(new AudioClassificationPostProcessEstimator(mlContext,
-        new AudioClassificationPostProcessOptions { Labels = labels }));
+    .Append(new OnnxAudioScoringEstimator(mlContext,
+        new OnnxAudioScoringOptions { ModelPath = modelPath }))
+    .Append(new AudioClassificationPostProcessingEstimator(mlContext,
+        new AudioClassificationPostProcessingOptions { Labels = labels }));
 
 var composedModel = composedPipeline.Fit(data);
 var composedOutput = composedModel.Transform(data);

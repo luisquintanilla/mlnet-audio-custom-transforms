@@ -16,8 +16,8 @@ public sealed class OnnxAudioClassificationTransformer : ITransformer, IDisposab
     private readonly MLContext _mlContext;
     private readonly OnnxAudioClassificationOptions _options;
     private readonly AudioFeatureExtractionTransformer _featureTransformer;
-    private readonly OnnxAudioScorerTransformer _scorerTransformer;
-    private readonly AudioClassificationPostProcessTransformer _postProcessTransformer;
+    private readonly OnnxAudioScoringTransformer _scorerTransformer;
+    private readonly AudioClassificationPostProcessingTransformer _postProcessTransformer;
 
     public bool IsRowToRowMapper => true;
 
@@ -25,8 +25,8 @@ public sealed class OnnxAudioClassificationTransformer : ITransformer, IDisposab
         MLContext mlContext,
         OnnxAudioClassificationOptions options,
         AudioFeatureExtractionTransformer featureTransformer,
-        OnnxAudioScorerTransformer scorerTransformer,
-        AudioClassificationPostProcessTransformer postProcessTransformer)
+        OnnxAudioScoringTransformer scorerTransformer,
+        AudioClassificationPostProcessingTransformer postProcessTransformer)
     {
         _mlContext = mlContext;
         _options = options;

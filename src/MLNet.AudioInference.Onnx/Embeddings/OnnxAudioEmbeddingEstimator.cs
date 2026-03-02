@@ -43,7 +43,7 @@ public sealed class OnnxAudioEmbeddingEstimator : IEstimator<OnnxAudioEmbeddingT
 
         // Stage 2: ONNX scoring
         var featuredData = featureTransformer.Transform(input);
-        var scorerOptions = new OnnxAudioScorerOptions
+        var scorerOptions = new OnnxAudioScoringOptions
         {
             ModelPath = _options.ModelPath,
             InputColumnName = "Features",
@@ -52,12 +52,12 @@ public sealed class OnnxAudioEmbeddingEstimator : IEstimator<OnnxAudioEmbeddingT
             OutputTensorName = _options.OutputTensorName,
             GpuDeviceId = _options.GpuDeviceId
         };
-        var scorerEstimator = new OnnxAudioScorerEstimator(env, scorerOptions);
+        var scorerEstimator = new OnnxAudioScoringEstimator(env, scorerOptions);
         var scorerTransformer = scorerEstimator.Fit(featuredData);
 
         // Stage 3: Embedding pooling + normalization
         var scoredData = scorerTransformer.Transform(featuredData);
-        var poolerOptions = new AudioEmbeddingPoolerOptions
+        var poolerOptions = new AudioEmbeddingPoolingOptions
         {
             InputColumnName = "Scores",
             OutputColumnName = _options.OutputColumnName,
@@ -66,7 +66,7 @@ public sealed class OnnxAudioEmbeddingEstimator : IEstimator<OnnxAudioEmbeddingT
             HiddenDim = scorerTransformer.HiddenDim,
             IsPrePooled = scorerTransformer.HasPooledOutput
         };
-        var poolerEstimator = new AudioEmbeddingPoolerEstimator(env, poolerOptions);
+        var poolerEstimator = new AudioEmbeddingPoolingEstimator(env, poolerOptions);
         var poolerTransformer = poolerEstimator.Fit(scoredData);
 
         return new OnnxAudioEmbeddingTransformer(

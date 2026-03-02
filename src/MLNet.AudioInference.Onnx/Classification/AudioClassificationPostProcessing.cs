@@ -8,7 +8,7 @@ namespace MLNet.AudioInference.Onnx;
 /// <summary>
 /// Options for audio classification post-processing.
 /// </summary>
-public class AudioClassificationPostProcessOptions
+public class AudioClassificationPostProcessingOptions
 {
     /// <summary>Class labels for classification.</summary>
     public required string[] Labels { get; set; }
@@ -29,20 +29,20 @@ public class AudioClassificationPostProcessOptions
 /// <summary>
 /// Estimator for audio classification post-processing (Stage 3).
 /// </summary>
-public sealed class AudioClassificationPostProcessEstimator : IEstimator<AudioClassificationPostProcessTransformer>
+public sealed class AudioClassificationPostProcessingEstimator : IEstimator<AudioClassificationPostProcessingTransformer>
 {
     private readonly IHostEnvironment _env;
-    private readonly AudioClassificationPostProcessOptions _options;
+    private readonly AudioClassificationPostProcessingOptions _options;
 
-    public AudioClassificationPostProcessEstimator(IHostEnvironment env, AudioClassificationPostProcessOptions options)
+    public AudioClassificationPostProcessingEstimator(IHostEnvironment env, AudioClassificationPostProcessingOptions options)
     {
         _env = env;
         _options = options;
     }
 
-    public AudioClassificationPostProcessTransformer Fit(IDataView input)
+    public AudioClassificationPostProcessingTransformer Fit(IDataView input)
     {
-        return new AudioClassificationPostProcessTransformer(_env, _options);
+        return new AudioClassificationPostProcessingTransformer(_env, _options);
     }
 
     public SchemaShape GetOutputSchema(SchemaShape inputSchema)
@@ -70,14 +70,14 @@ public sealed class AudioClassificationPostProcessEstimator : IEstimator<AudioCl
 /// <summary>
 /// Stage 3 sub-transform for classification: softmax + argmax + label mapping.
 /// </summary>
-public sealed class AudioClassificationPostProcessTransformer : ITransformer, IDisposable
+public sealed class AudioClassificationPostProcessingTransformer : ITransformer, IDisposable
 {
-    private readonly AudioClassificationPostProcessOptions _options;
-    internal AudioClassificationPostProcessOptions Options => _options;
+    private readonly AudioClassificationPostProcessingOptions _options;
+    internal AudioClassificationPostProcessingOptions Options => _options;
 
     public bool IsRowToRowMapper => true;
 
-    internal AudioClassificationPostProcessTransformer(IHostEnvironment env, AudioClassificationPostProcessOptions options)
+    internal AudioClassificationPostProcessingTransformer(IHostEnvironment env, AudioClassificationPostProcessingOptions options)
     {
         _options = options;
     }
@@ -130,13 +130,13 @@ public sealed class AudioClassificationPostProcessTransformer : ITransformer, ID
     private sealed class ClassificationDataView : IDataView
     {
         private readonly IDataView _input;
-        private readonly AudioClassificationPostProcessTransformer _transformer;
+        private readonly AudioClassificationPostProcessingTransformer _transformer;
 
         public DataViewSchema Schema { get; }
         public bool CanShuffle => false;
         public long? GetRowCount() => _input.GetRowCount();
 
-        internal ClassificationDataView(IDataView input, AudioClassificationPostProcessTransformer transformer)
+        internal ClassificationDataView(IDataView input, AudioClassificationPostProcessingTransformer transformer)
         {
             _input = input;
             _transformer = transformer;
@@ -169,7 +169,7 @@ public sealed class AudioClassificationPostProcessTransformer : ITransformer, ID
     {
         private readonly ClassificationDataView _dataView;
         private readonly DataViewRowCursor _inputCursor;
-        private readonly AudioClassificationPostProcessTransformer _transformer;
+        private readonly AudioClassificationPostProcessingTransformer _transformer;
         private readonly int _labelColIndex;
         private readonly int _scoreColIndex;
         private readonly int _probsColIndex;
@@ -181,7 +181,7 @@ public sealed class AudioClassificationPostProcessTransformer : ITransformer, ID
         internal ClassificationCursor(
             ClassificationDataView dataView,
             DataViewRowCursor inputCursor,
-            AudioClassificationPostProcessTransformer transformer)
+            AudioClassificationPostProcessingTransformer transformer)
         {
             _dataView = dataView;
             _inputCursor = inputCursor;

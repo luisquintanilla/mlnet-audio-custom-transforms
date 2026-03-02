@@ -14,8 +14,8 @@ public sealed class OnnxAudioEmbeddingTransformer : ITransformer, IDisposable
     private readonly MLContext _mlContext;
     private readonly OnnxAudioEmbeddingOptions _options;
     private readonly AudioFeatureExtractionTransformer _featureTransformer;
-    private readonly OnnxAudioScorerTransformer _scorerTransformer;
-    private readonly AudioEmbeddingPoolerTransformer _poolerTransformer;
+    private readonly OnnxAudioScoringTransformer _scorerTransformer;
+    private readonly AudioEmbeddingPoolingTransformer _poolerTransformer;
 
     /// <summary>
     /// Embedding dimension discovered from the ONNX model.
@@ -28,8 +28,8 @@ public sealed class OnnxAudioEmbeddingTransformer : ITransformer, IDisposable
         MLContext mlContext,
         OnnxAudioEmbeddingOptions options,
         AudioFeatureExtractionTransformer featureTransformer,
-        OnnxAudioScorerTransformer scorerTransformer,
-        AudioEmbeddingPoolerTransformer poolerTransformer)
+        OnnxAudioScoringTransformer scorerTransformer,
+        AudioEmbeddingPoolingTransformer poolerTransformer)
     {
         _mlContext = mlContext;
         _options = options;

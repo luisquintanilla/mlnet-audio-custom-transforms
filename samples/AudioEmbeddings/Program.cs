@@ -96,10 +96,10 @@ var composedPipeline = new AudioFeatureExtractionEstimator(mlContext,
             FeatureExtractor = new MelSpectrogramExtractor(sampleRate: 16000) { NumMelBins = 64, FftSize = 512, HopLength = 160 },
             SampleRate = 16000
         })
-    .Append(new OnnxAudioScorerEstimator(mlContext,
-        new OnnxAudioScorerOptions { ModelPath = modelPath }))
-    .Append(new AudioEmbeddingPoolerEstimator(mlContext,
-        new AudioEmbeddingPoolerOptions
+    .Append(new OnnxAudioScoringEstimator(mlContext,
+        new OnnxAudioScoringOptions { ModelPath = modelPath }))
+    .Append(new AudioEmbeddingPoolingEstimator(mlContext,
+        new AudioEmbeddingPoolingOptions
         {
             Pooling = AudioPoolingStrategy.MeanPooling,
             Normalize = true
