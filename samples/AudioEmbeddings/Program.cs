@@ -1,3 +1,4 @@
+using System.Numerics.Tensors;
 using Microsoft.Extensions.AI;
 using Microsoft.ML;
 using MLNet.Audio.Core;
@@ -155,16 +156,7 @@ return;
 // === Helpers ===
 
 static float CosineSimilarity(float[] a, float[] b)
-{
-    float dot = 0, normA = 0, normB = 0;
-    for (int i = 0; i < a.Length; i++)
-    {
-        dot += a[i] * b[i];
-        normA += a[i] * a[i];
-        normB += b[i] * b[i];
-    }
-    return dot / (MathF.Sqrt(normA) * MathF.Sqrt(normB));
-}
+    => TensorPrimitives.CosineSimilarity(a, b);
 
 static void GenerateTestFiles(string dir)
 {

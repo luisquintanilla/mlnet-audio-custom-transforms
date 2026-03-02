@@ -372,10 +372,7 @@ public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
         var waveformTensor = results.First().AsTensor<float>();
 
         // Flatten to 1D waveform
-        var waveform = new float[waveformTensor.Length];
-        int idx = 0;
-        foreach (var sample in waveformTensor)
-            waveform[idx++] = sample;
+        var waveform = waveformTensor.ToArray();
 
         // Normalize to [-1, 1] using TensorPrimitives
         float maxAbs = TensorPrimitives.MaxMagnitude(waveform.AsSpan());
