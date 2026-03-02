@@ -60,8 +60,8 @@ var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
 var emptyData = mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>());
 using var transformer = estimator.Fit(emptyData);
 
-// --- Approach 1: Direct API ---
-Console.WriteLine("=== Direct Embedding API ===");
+// --- Approach 1: ML.NET Pipeline (Fit / Transform) ---
+Console.WriteLine("=== ML.NET Pipeline (Fit / Transform) ===");
 
 var audioInputs = wavFiles.Select(f =>
 {
@@ -71,6 +71,23 @@ var audioInputs = wavFiles.Select(f =>
     return audio;
 }).ToList();
 
+var data = mlContext.Data.LoadFromEnumerable(
+    audioInputs.Select(a => new AudioInput { Audio = a.Samples }).ToArray());
+
+var model = estimator.Fit(data);
+var output = model.Transform(data);
+
+var outputRows = mlContext.Data.CreateEnumerable<EmbeddingOutput>(output, reuseRowObject: false).ToList();
+for (int i = 0; i < outputRows.Count; i++)
+{
+    var emb = outputRows[i].Embedding;
+    Console.WriteLine($"  {Path.GetFileName(wavFiles[i])}: [{emb.Length}]-dim embedding");
+    Console.WriteLine($"    First 5 values: [{string.Join(", ", emb.Take(5).Select(v => v.ToString("F4")))}...]");
+}
+
+// --- Approach 2: Direct API ---
+Console.WriteLine("\n=== Direct Embedding API ===");
+
 var embeddings = transformer.GenerateEmbeddings(audioInputs);
 
 for (int i = 0; i < wavFiles.Length; i++)
@@ -79,7 +96,7 @@ for (int i = 0; i < wavFiles.Length; i++)
     Console.WriteLine($"    First 5 values: [{string.Join(", ", embeddings[i].Take(5).Select(v => v.ToString("F4")))}...]");
 }
 
-// --- Approach 2: MEAI IEmbeddingGenerator ---
+// --- Approach 3: MEAI IEmbeddingGenerator ---
 Console.WriteLine("\n=== MEAI IEmbeddingGenerator<AudioData, Embedding<float>> ===");
 
 using IEmbeddingGenerator<AudioData, Embedding<float>> generator =
@@ -186,5 +203,12 @@ static void RunSyntheticDemo()
 class AudioInput
 {
     public float[] Audio { get; set; } = [];
+}
+
+class EmbeddingOutput
+{
+    [Microsoft.ML.Data.ColumnName("Embedding")]
+    [Microsoft.ML.Data.VectorType]
+    public float[] Embedding { get; set; } = [];
 }
 

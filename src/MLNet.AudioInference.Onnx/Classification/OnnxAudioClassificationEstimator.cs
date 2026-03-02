@@ -1,13 +1,14 @@
 using System.Reflection;
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using Microsoft.ML.Runtime;
 using MLNet.Audio.Core;
 
 namespace MLNet.AudioInference.Onnx;
 
 /// <summary>
 /// ML.NET estimator for audio classification using ONNX models.
-/// Implements the IEstimator pattern — call Fit() to produce a transformer.
+/// Composes 3 sub-transforms: feature extraction → ONNX scoring → classification post-processing.
 /// </summary>
 public sealed class OnnxAudioClassificationEstimator : IEstimator<OnnxAudioClassificationTransformer>
 {
@@ -30,7 +31,48 @@ public sealed class OnnxAudioClassificationEstimator : IEstimator<OnnxAudioClass
 
     public OnnxAudioClassificationTransformer Fit(IDataView input)
     {
-        return new OnnxAudioClassificationTransformer(_mlContext, _options);
+        var env = (IHostEnvironment)_mlContext;
+
+        // Stage 1: Feature extraction
+        var featureOptions = new AudioFeatureExtractionOptions
+        {
+            FeatureExtractor = _options.FeatureExtractor,
+            InputColumnName = _options.InputColumnName,
+            OutputColumnName = "Features",
+            SampleRate = _options.SampleRate
+        };
+        var featureEstimator = new AudioFeatureExtractionEstimator(env, featureOptions);
+        var featureTransformer = featureEstimator.Fit(input);
+
+        // Stage 2: ONNX scoring
+        var featuredData = featureTransformer.Transform(input);
+        var scorerOptions = new OnnxAudioScorerOptions
+        {
+            ModelPath = _options.ModelPath,
+            InputColumnName = "Features",
+            OutputColumnName = "Scores",
+            InputTensorName = _options.InputTensorName,
+            OutputTensorName = _options.OutputTensorName,
+            GpuDeviceId = _options.GpuDeviceId
+        };
+        var scorerEstimator = new OnnxAudioScorerEstimator(env, scorerOptions);
+        var scorerTransformer = scorerEstimator.Fit(featuredData);
+
+        // Stage 3: Classification post-processing
+        var scoredData = scorerTransformer.Transform(featuredData);
+        var postProcessOptions = new AudioClassificationPostProcessOptions
+        {
+            Labels = _options.Labels,
+            InputColumnName = "Scores",
+            PredictedLabelColumnName = _options.PredictedLabelColumnName,
+            ProbabilitiesColumnName = _options.ProbabilitiesColumnName,
+            ScoreColumnName = _options.ScoreColumnName
+        };
+        var postProcessEstimator = new AudioClassificationPostProcessEstimator(env, postProcessOptions);
+        var postProcessTransformer = postProcessEstimator.Fit(scoredData);
+
+        return new OnnxAudioClassificationTransformer(
+            _mlContext, _options, featureTransformer, scorerTransformer, postProcessTransformer);
     }
 
     public SchemaShape GetOutputSchema(SchemaShape inputSchema)

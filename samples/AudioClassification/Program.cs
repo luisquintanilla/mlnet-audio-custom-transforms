@@ -55,9 +55,6 @@ var labels = new[]
     "Crying", "Cough", "Sneeze", "Clapping", "Typing", "Footsteps"
 };
 
-// --- Approach 1: Direct API (outside ML.NET pipeline) ---
-Console.WriteLine("\n=== Direct Classification API ===");
-
 var mlContext = new MLContext();
 var options = new OnnxAudioClassificationOptions
 {
@@ -72,25 +69,8 @@ var options = new OnnxAudioClassificationOptions
     SampleRate = 16000
 };
 
-var estimator = mlContext.Transforms.OnnxAudioClassification(options);
-var emptyData = mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>());
-using var transformer = estimator.Fit(emptyData);
-
-var results = transformer.Classify(new[] { audio });
-foreach (var result in results)
-{
-    Console.WriteLine($"  Predicted: {result.PredictedLabel} (confidence: {result.Score:P2})");
-    Console.WriteLine("  Top 5 classes:");
-    var topK = result.Labels
-        .Zip(result.Probabilities, (l, p) => (Label: l, Prob: p))
-        .OrderByDescending(x => x.Prob)
-        .Take(5);
-    foreach (var (label, prob) in topK)
-        Console.WriteLine($"    {label}: {prob:P2}");
-}
-
-// --- Approach 2: ML.NET Pipeline ---
-Console.WriteLine("\n=== ML.NET Pipeline ===");
+// --- Approach 1: ML.NET Pipeline (Fit / Transform) ---
+Console.WriteLine("\n=== ML.NET Pipeline (Fit / Transform) ===");
 
 var data = mlContext.Data.LoadFromEnumerable(new[]
 {
@@ -101,17 +81,26 @@ var pipeline = mlContext.Transforms.OnnxAudioClassification(options);
 var model = pipeline.Fit(data);
 var output = model.Transform(data);
 
-using var cursor = output.GetRowCursor(output.Schema);
-var labelGetter = cursor.GetGetter<ReadOnlyMemory<char>>(output.Schema["PredictedLabel"]);
-var scoreGetter = cursor.GetGetter<float>(output.Schema["Score"]);
-
-while (cursor.MoveNext())
+var outputRows = mlContext.Data.CreateEnumerable<ClassificationOutput>(output, reuseRowObject: false).ToList();
+foreach (var row in outputRows)
 {
-    var label = default(ReadOnlyMemory<char>);
-    var score = default(float);
-    labelGetter(ref label);
-    scoreGetter(ref score);
-    Console.WriteLine($"  Pipeline result: {label} ({score:P2})");
+    Console.WriteLine($"  Predicted: {row.PredictedLabel} (confidence: {row.Score:P2})");
+    Console.WriteLine("  Top 5 classes:");
+    var topK = labels
+        .Zip(row.Probabilities, (l, p) => (Label: l, Prob: p))
+        .OrderByDescending(x => x.Prob)
+        .Take(5);
+    foreach (var (label, prob) in topK)
+        Console.WriteLine($"    {label}: {prob:P2}");
+}
+
+// --- Approach 2: Direct API (convenience) ---
+Console.WriteLine("\n=== Direct Classification API ===");
+
+var results = model.Classify(new[] { audio });
+foreach (var result in results)
+{
+    Console.WriteLine($"  Predicted: {result.PredictedLabel} (confidence: {result.Score:P2})");
 }
 
 Console.WriteLine("\nDone!");
@@ -134,5 +123,18 @@ static void GenerateTestWav(string path)
 class AudioInput
 {
     public float[] Audio { get; set; } = [];
+}
+
+class ClassificationOutput
+{
+    [Microsoft.ML.Data.ColumnName("PredictedLabel")]
+    public string PredictedLabel { get; set; } = "";
+
+    [Microsoft.ML.Data.ColumnName("Score")]
+    public float Score { get; set; }
+
+    [Microsoft.ML.Data.ColumnName("Probabilities")]
+    [Microsoft.ML.Data.VectorType]
+    public float[] Probabilities { get; set; } = [];
 }
 
