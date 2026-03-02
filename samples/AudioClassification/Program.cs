@@ -94,7 +94,32 @@ foreach (var row in outputRows)
         Console.WriteLine($"    {label}: {prob:P2}");
 }
 
-// --- Approach 2: Direct API (convenience) ---
+// --- Approach 2: Composed Pipeline (individual sub-transforms) ---
+Console.WriteLine("\n=== Composed Pipeline (Sub-Transforms) ===");
+
+// Compose individual stages: feature extraction → ONNX scoring → post-processing
+// Same pattern as text transforms: tokenizer → model → pooler
+var composedPipeline = new AudioFeatureExtractionEstimator(mlContext,
+        new AudioFeatureExtractionOptions
+        {
+            FeatureExtractor = new MelSpectrogramExtractor(sampleRate: 16000) { NumMelBins = 128, FftSize = 400, HopLength = 160 },
+            SampleRate = 16000
+        })
+    .Append(new OnnxAudioScorerEstimator(mlContext,
+        new OnnxAudioScorerOptions { ModelPath = modelPath }))
+    .Append(new AudioClassificationPostProcessEstimator(mlContext,
+        new AudioClassificationPostProcessOptions { Labels = labels }));
+
+var composedModel = composedPipeline.Fit(data);
+var composedOutput = composedModel.Transform(data);
+
+var composedRows = mlContext.Data.CreateEnumerable<ClassificationOutput>(composedOutput, reuseRowObject: false).ToList();
+foreach (var row in composedRows)
+{
+    Console.WriteLine($"  Predicted: {row.PredictedLabel} (confidence: {row.Score:P2})");
+}
+
+// --- Approach 3: Direct API (convenience) ---
 Console.WriteLine("\n=== Direct Classification API ===");
 
 var results = model.Classify(new[] { audio });

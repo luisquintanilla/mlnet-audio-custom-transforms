@@ -21,10 +21,10 @@ public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
     internal OnnxAudioScorerOptions Options => _options;
 
     /// <summary>Hidden dimension discovered from the ONNX model output shape.</summary>
-    internal int HiddenDim { get; }
+    public int HiddenDim { get; }
 
     /// <summary>Whether the model has a pooled output (single vector per sample).</summary>
-    internal bool HasPooledOutput { get; }
+    public bool HasPooledOutput { get; }
 
     public bool IsRowToRowMapper => true;
 
