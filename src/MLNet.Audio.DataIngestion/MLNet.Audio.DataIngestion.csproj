@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>MLNet.Audio.DataIngestion</PackageId>
+    <Description>Audio data ingestion components for Microsoft.Extensions.DataIngestion. Provides AudioDocumentReader, AudioSegmentChunker, and AudioEmbeddingChunkProcessor for building audio-to-vector-store pipelines.</Description>
+    <PackageTags>audio;data-ingestion;chunking;rag;embedding;wav</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DataIngestion.Abstractions" Version="10.3.0-preview.1.26109.11" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MLNet.Audio.Core\MLNet.Audio.Core.csproj" />
+  </ItemGroup>
+
+</Project>
