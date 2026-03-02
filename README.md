@@ -32,15 +32,31 @@ using MLNet.Audio.Core;
 using MLNet.AudioInference.Onnx;
 
 var mlContext = new MLContext();
+var audio = AudioIO.LoadWav("audio.wav");
 
-// --- Audio Classification (AST) ---
-var pipeline = mlContext.Transforms.OnnxAudioClassification(new OnnxAudioClassificationOptions
+// --- Audio Classification (AST) — full Fit/Transform pattern ---
+var options = new OnnxAudioClassificationOptions
 {
     ModelPath = "models/ast/onnx/model.onnx",
     FeatureExtractor = new MelSpectrogramExtractor(16000) { NumMelBins = 128 },
     Labels = new[] { "Speech", "Music", "Silence" }
-});
+};
 
+// Load data
+var data = mlContext.Data.LoadFromEnumerable(new[] { new AudioInput { Audio = audio.Samples } });
+
+// Create pipeline, fit, and transform
+var pipeline = mlContext.Transforms.OnnxAudioClassification(options);
+var model = pipeline.Fit(data);
+var output = model.Transform(data);
+
+// Enumerate results
+var results = mlContext.Data.CreateEnumerable<ClassificationOutput>(output, reuseRowObject: false);
+```
+
+The other tasks follow the same Fit/Transform pattern. Pipeline creation for each:
+
+```csharp
 // --- Audio Embeddings (CLAP) ---
 var pipeline = mlContext.Transforms.OnnxAudioEmbedding(new OnnxAudioEmbeddingOptions
 {
@@ -84,8 +100,10 @@ Integrates with [Microsoft.Extensions.AI](https://learn.microsoft.com/dotnet/ai/
 
 ```csharp
 // Audio Embeddings via MEAI
+var estimator = mlContext.Transforms.OnnxAudioEmbedding(embeddingOptions);
+var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
 IEmbeddingGenerator<AudioData, Embedding<float>> generator =
-    new OnnxAudioEmbeddingGenerator(embeddingOptions);
+    new OnnxAudioEmbeddingGenerator(transformer);
 var embeddings = await generator.GenerateAsync([audio]);
 
 // Speech-to-Text via MEAI
@@ -122,9 +140,9 @@ Audio (PCM) → Feature Extraction → ONNX Scoring → Post-processing → Resu
 
 Three-stage pipeline pattern mirroring the text transform architecture. See [Architecture Guide](docs/architecture.md).
 
-- **Encoder-only** (classification, embeddings, VAD): single-pass, mel → ONNX → result
-- **Encoder-decoder** (Whisper ASR): mel → encoder → decoder loop with KV cache → text
-- **Encoder-decoder-vocoder** (SpeechT5 TTS): tokens → encoder → decoder loop with KV cache → mel → vocoder → audio
+- **Encoder-only** (classification, embeddings, VAD): single-pass, mel → ONNX → result. Uses a **composed** 3-stage pattern with lazy `IDataView` wrappers (feature extraction → scoring → post-processing as separate `ITransformer` stages).
+- **Encoder-decoder** (Whisper ASR): mel → encoder → decoder loop with KV cache → text. Stays **monolithic** — the autoregressive decode loop cannot be split across lazy stages.
+- **Encoder-decoder-vocoder** (SpeechT5 TTS): tokens → encoder → decoder loop with KV cache → mel → vocoder → audio. Also **monolithic** due to the sequential decode loop.
 
 ## .NET Primitives Used
 
@@ -144,6 +162,22 @@ Three-stage pipeline pattern mirroring the text transform architecture. See [Arc
 
 - .NET 10 SDK
 - ONNX models from HuggingFace (see [Models Guide](docs/models-guide.md))
+
+## Getting Started
+
+### Codespaces / DevContainer
+Open in GitHub Codespaces for a pre-configured environment with .NET 10, Python (for model downloads), and C# Dev Kit.
+
+### NuGet Packages
+Published to [GitHub Packages](https://github.com/luisquintanilla?tab=packages&repo_name=mlnet-audio-custom-transforms):
+- `MLNet.Audio.Core`
+- `MLNet.AudioInference.Onnx`
+- `MLNet.ASR.OnnxGenAI`
+
+Add the GitHub Packages source to your `nuget.config`:
+```xml
+<add key="github" value="https://nuget.pkg.github.com/luisquintanilla/index.json" />
+```
 
 ## Related Projects
 

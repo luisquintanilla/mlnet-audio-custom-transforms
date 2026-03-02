@@ -32,15 +32,15 @@ ML.NET `IEstimator<T>`/`ITransformer` implementations for all audio tasks.
 
 | Subdirectory | Types | Description |
 |--------------|-------|-------------|
-| Classification/ | `OnnxAudioClassificationEstimator`, `OnnxAudioClassificationTransformer`, `OnnxAudioClassificationOptions` | Audio classification with softmax + label mapping |
-| Embeddings/ | `OnnxAudioEmbeddingEstimator`, `OnnxAudioEmbeddingTransformer`, `OnnxAudioEmbeddingOptions`, `AudioPoolingStrategy` | Audio embeddings with pooling (MeanPooling, ClsToken, MaxPooling) + L2 normalization |
+| Classification/ | `OnnxAudioClassificationEstimator`, `OnnxAudioClassificationTransformer`, `OnnxAudioClassificationOptions`, `AudioClassificationPostProcessEstimator`, `AudioClassificationPostProcessTransformer` | Audio classification with softmax + label mapping |
+| Embeddings/ | `OnnxAudioEmbeddingEstimator`, `OnnxAudioEmbeddingTransformer`, `OnnxAudioEmbeddingOptions`, `AudioPoolingStrategy`, `AudioEmbeddingPoolerEstimator`, `AudioEmbeddingPoolerTransformer` | Audio embeddings with pooling (MeanPooling, ClsToken, MaxPooling) + L2 normalization |
 | VAD/ | `OnnxVadEstimator`, `OnnxVadTransformer`, `OnnxVadOptions`, `IVoiceActivityDetector`, `SpeechSegment`, `VadOptions` | Voice activity detection with frame scoring + segment merging. `OnnxVadTransformer` implements both `ITransformer` and `IVoiceActivityDetector` |
 | ASR/ | `SpeechToTextClientEstimator`, `SpeechToTextClientTransformer`, `SpeechToTextClientOptions` | Provider-agnostic ASR wrapping any `ISpeechToTextClient` |
 | ASR/ | `OnnxWhisperEstimator`, `OnnxWhisperTransformer`, `OnnxWhisperOptions`, `WhisperKvCacheManager` | Raw ONNX Whisper with manual encoder/decoder/KV cache management |
 | TTS/ | `OnnxSpeechT5TtsEstimator`, `OnnxSpeechT5TtsTransformer`, `OnnxSpeechT5Options` | SpeechT5 text-to-speech: encoder → decoder (KV cache) → vocoder |
 | TTS/ | `ITextToSpeechClient`, `OnnxTextToSpeechClient`, `TextToSpeechResponse`, `TextToSpeechResponseUpdate`, `TextToSpeechOptions`, `TextToSpeechClientMetadata` | MEAI-style TTS interface (prototype — MEAI doesn't have this yet) |
 | MEAI/ | `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` bridge to MEAI |
-| Shared/ | `EnCodecTokenizer` | Concrete `AudioCodecTokenizer` for Meta's EnCodec (1.5–24 kbps, 2–32 RVQ codebooks, 1024 codebook entries) |
+| Shared/ | `AudioFeatureExtractionEstimator`, `AudioFeatureExtractionTransformer`, `OnnxAudioScorerEstimator`, `OnnxAudioScorerTransformer`, `EnCodecTokenizer` | Reusable sub-transforms for the composed 3-stage pipeline. Feature extraction (Stage 1) and ONNX scoring (Stage 2) are shared across classification and embeddings |
 
 **Entry points** via `MLContextExtensions`:
 
@@ -97,6 +97,14 @@ Stage 1: Feature Extraction  (audio → numeric features)
 Stage 2: ONNX Scoring        (features → model output)
 Stage 3: Post-processing      (model output → typed result)
 ```
+
+For encoder-only transforms, these stages are implemented as **separate, composable sub-transforms** chained via lazy `IDataView`:
+
+- **Stage 1:** `AudioFeatureExtractionTransformer` — audio PCM → mel spectrogram features
+- **Stage 2:** `OnnxAudioScorerTransformer` — features → raw ONNX model output
+- **Stage 3:** Task-specific post-processor (`AudioClassificationPostProcessTransformer` or `AudioEmbeddingPoolerTransformer`)
+
+The facade `Fit()` chains these sub-estimators, and the facade `Transform()` chains the resulting sub-transformers. Each sub-transform wraps its output in a lazy `IDataView` — no computation occurs until the cursor is iterated.
 
 ### Concrete examples per task
 
@@ -280,32 +288,13 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
         native dependency isolated.
 ```
 
-## Eager Evaluation Pattern
+### Evaluation Strategy
 
-All transforms use `MLContext.Data.LoadFromEnumerable()` for immediate processing rather than ML.NET's default lazy `IDataView` streaming. This matches the text transform pattern where `ChatClientTransformer` processes all rows eagerly.
+**Encoder-only transforms** (classification, embeddings) use a **composed lazy** pattern. `Fit()` chains 3 sub-estimators, and `Transform()` chains 3 lazy `IDataView` wrappers — computation happens only when a cursor iterates over the output. This matches the text transform architecture where `OnnxTextEmbeddingTransformer` chains `TextTokenizerTransformer` → `OnnxTextModelScorerTransformer` → `EmbeddingPoolingTransformer`.
 
-**Why eager?**
+**Encoder-decoder transforms** (Whisper ASR, SpeechT5 TTS) and **stateful transforms** (Silero VAD) use **eager evaluation** via `LoadFromEnumerable()`. Autoregressive decoding loops with KV cache state don't map cleanly to per-row lazy cursors.
 
-- ONNX models need the full input tensor upfront — they can't process partial PCM streams
-- Autoregressive decoder loops (Whisper, SpeechT5) require sequential token generation that doesn't map to lazy row-by-row evaluation
-- Audio data is typically processed in bounded chunks (30s for Whisper), making batch-at-once natural
-- Consistent with how the text transforms work (e.g., `OnnxTextGenerationTransformer`)
-
-The pattern in every transformer's `Transform()` method:
-
-```csharp
-public IDataView Transform(IDataView input)
-{
-    // 1. Materialize input into typed objects
-    var rows = _mlContext.Data.CreateEnumerable<InputRow>(input, reuseRowObject: false).ToList();
-
-    // 2. Process all rows (feature extraction → ONNX → post-processing)
-    var results = Process(rows);
-
-    // 3. Return as new IDataView
-    return _mlContext.Data.LoadFromEnumerable(results);
-}
-```
+Direct convenience APIs (`Classify()`, `GenerateEmbeddings()`, `Transcribe()`, `Synthesize()`) bypass IDataView entirely — they're always eager.
 
 ## ML.NET Pipeline Composition
 

@@ -229,6 +229,14 @@ var options = new OnnxAudioClassificationOptions
     SampleRate = 16000
 };
 
+// ML.NET Pipeline (primary)
+var data = mlContext.Data.LoadFromEnumerable(new[] { new AudioInput { Audio = audio.Samples } });
+var pipeline = mlContext.Transforms.OnnxAudioClassification(options);
+var model = pipeline.Fit(data);
+var output = model.Transform(data);
+// Enumerate results via mlContext.Data.CreateEnumerable<ClassificationOutput>(output, false)
+
+// Direct API (convenience)
 var estimator = mlContext.Transforms.OnnxAudioClassification(options);
 var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
 var results = transformer.Classify([audio]);
@@ -282,6 +290,13 @@ var options = new OnnxAudioEmbeddingOptions
     Normalize = true
 };
 
+// ML.NET Pipeline (primary)
+var data = mlContext.Data.LoadFromEnumerable(audioInputs.Select(a => new AudioInput { Audio = a.Samples }));
+var pipeline = mlContext.Transforms.OnnxAudioEmbedding(options);
+var model = pipeline.Fit(data);
+var output = model.Transform(data);
+
+// Direct API (convenience)
 var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
 var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
 var embeddings = transformer.GenerateEmbeddings([audio1, audio2]);

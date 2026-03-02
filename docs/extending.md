@@ -86,12 +86,11 @@ Key patterns:
 
 ### Step 3: Create a Transformer
 
-The transformer does the actual work. Follow `OnnxAudioClassificationTransformer` as a template:
+The transformer composes three reusable sub-transforms. Follow `OnnxAudioClassificationTransformer` as a template:
 
 ```csharp
 using Microsoft.ML;
 using Microsoft.ML.Data;
-using Microsoft.ML.OnnxRuntime;
 using MLNet.Audio.Core;
 
 namespace MLNet.AudioInference.Onnx;
@@ -100,33 +99,36 @@ public sealed class MyModelTransformer : ITransformer, IDisposable
 {
     private readonly MLContext _mlContext;
     private readonly MyModelOptions _options;
-    private readonly InferenceSession _session;
-    private readonly string _inputTensorName;
-    private readonly string _outputTensorName;
+    private readonly AudioFeatureExtractionTransformer _featureTransformer;
+    private readonly OnnxAudioScorerTransformer _scorerTransformer;
+    private readonly MyPostProcessTransformer _postProcessTransformer;
 
     public bool IsRowToRowMapper => true;
 
-    internal MyModelTransformer(MLContext mlContext, MyModelOptions options)
+    internal MyModelTransformer(
+        MLContext mlContext,
+        MyModelOptions options,
+        AudioFeatureExtractionTransformer featureTransformer,
+        OnnxAudioScorerTransformer scorerTransformer,
+        MyPostProcessTransformer postProcessTransformer)
     {
         _mlContext = mlContext;
         _options = options;
+        _featureTransformer = featureTransformer;
+        _scorerTransformer = scorerTransformer;
+        _postProcessTransformer = postProcessTransformer;
+    }
 
-        // Create ONNX Runtime session
-        var sessionOptions = new SessionOptions();
-        if (options.GpuDeviceId.HasValue)
-        {
-            try { sessionOptions.AppendExecutionProvider_CUDA(options.GpuDeviceId.Value); }
-            catch { /* fallback to CPU */ }
-        }
-        _session = new InferenceSession(options.ModelPath, sessionOptions);
-
-        // Auto-discover tensor names from model metadata
-        _inputTensorName = options.InputTensorName
-            ?? _session.InputNames.FirstOrDefault(n => n.Contains("input"))
-            ?? _session.InputNames[0];
-        _outputTensorName = options.OutputTensorName
-            ?? _session.OutputNames.FirstOrDefault(n => n.Contains("logits"))
-            ?? _session.OutputNames[0];
+    /// <summary>
+    /// ML.NET Transform — composed lazy pattern.
+    /// Chains 3 sub-transforms; each is lazy over the IDataView.
+    /// </summary>
+    public IDataView Transform(IDataView input)
+    {
+        var features = _featureTransformer.Transform(input);
+        var scores = _scorerTransformer.Transform(features);
+        var results = _postProcessTransformer.Transform(scores);
+        return results;
     }
 
     /// <summary>
@@ -134,52 +136,17 @@ public sealed class MyModelTransformer : ITransformer, IDisposable
     /// </summary>
     public MyResult[] Process(IReadOnlyList<AudioData> audioInputs)
     {
-        var results = new MyResult[audioInputs.Count];
-
-        for (int i = 0; i < audioInputs.Count; i++)
-        {
-            // Stage 1: Feature extraction
-            var features = _options.FeatureExtractor.Extract(audioInputs[i]);
-            int frames = features.GetLength(0);
-            int featureDim = features.GetLength(1);
-
-            var flatFeatures = new float[frames * featureDim];
-            Buffer.BlockCopy(features, 0, flatFeatures, 0, flatFeatures.Length * sizeof(float));
-
-            // Stage 2: ONNX inference
-            using var ortValue = OrtValue.CreateTensorValueFromMemory(
-                flatFeatures, [1, frames, featureDim]);
-            var inputs = new Dictionary<string, OrtValue> { [_inputTensorName] = ortValue };
-
-            using var runResults = _session.Run(new RunOptions(), inputs, [_outputTensorName]);
-            var outputTensor = runResults[0].GetTensorDataAsSpan<float>();
-
-            // Stage 3: Post-process the output
-            results[i] = PostProcess(outputTensor);
-        }
-
-        return results;
-    }
-
-    /// <summary>
-    /// ML.NET Transform — eager evaluation pattern.
-    /// </summary>
-    public IDataView Transform(IDataView input)
-    {
-        var audioSamples = ReadAudioColumn(input);
-        var audioInputs = audioSamples
-            .Select(s => new AudioData(s, _options.SampleRate)).ToList();
-        var results = Process(audioInputs);
-
-        var outputRows = results.Select(r => new MyOutputRow { /* map fields */ }).ToArray();
-        return _mlContext.Data.LoadFromEnumerable(outputRows);
+        // Direct APIs bypass IDataView and call sub-transform methods directly.
+        // See OnnxAudioClassificationTransformer.Classify() for a production example.
+        throw new NotImplementedException("Replace with your direct API logic.");
     }
 
     public DataViewSchema GetOutputSchema(DataViewSchema inputSchema)
     {
-        var builder = new DataViewSchema.Builder();
-        builder.AddColumn(_options.OutputColumnName, /* appropriate DataViewType */);
-        return builder.ToSchema();
+        // Chain output schemas through each sub-transform
+        var featureSchema = _featureTransformer.GetOutputSchema(inputSchema);
+        var scorerSchema = _scorerTransformer.GetOutputSchema(featureSchema);
+        return _postProcessTransformer.GetOutputSchema(scorerSchema);
     }
 
     public IRowToRowMapper GetRowToRowMapper(DataViewSchema inputSchema)
@@ -188,21 +155,20 @@ public sealed class MyModelTransformer : ITransformer, IDisposable
     void ICanSaveModel.Save(ModelSaveContext ctx)
         => throw new NotSupportedException("Saving not supported.");
 
-    public void Dispose() => _session?.Dispose();
-
-    // Helper: read float[] audio from IDataView column
-    private List<float[]> ReadAudioColumn(IDataView data) { /* same as classification */ }
-
-    // Your post-processing logic
-    private MyResult PostProcess(ReadOnlySpan<float> output) { /* ... */ }
+    public void Dispose()
+    {
+        _featureTransformer?.Dispose();
+        _scorerTransformer?.Dispose();
+        (_postProcessTransformer as IDisposable)?.Dispose();
+    }
 }
 ```
 
 Key implementation notes:
-- Use **eager evaluation**: `Transform()` reads all rows, processes them, and returns a new `IDataView` via `_mlContext.Data.LoadFromEnumerable()`. This is the same pattern used by all transforms in this framework.
-- Provide a **direct API** method (like `Classify()` or `GenerateEmbeddings()`) for use outside ML.NET pipelines.
-- **Auto-detect tensor names** from ONNX model metadata rather than hardcoding.
-- Use `OrtValue.CreateTensorValueFromMemory()` for zero-copy tensor creation.
+- Use the **composed lazy pattern**: `Transform()` chains 3 sub-transforms (`AudioFeatureExtractionTransformer` → `OnnxAudioScorerTransformer` → post-process), each lazy over the `IDataView`. This is the pattern used by all encoder-only transforms in this framework.
+- Encoder-decoder transforms (ASR, TTS) use **eager evaluation** instead, because autoregressive decoding loops don't decompose into lazy sub-transforms.
+- Provide a **direct API** method (like `Classify()` or `GenerateEmbeddings()`) for use outside ML.NET pipelines. Direct convenience APIs are always eager.
+- The composed transformer **does not** manage `InferenceSession` directly — that's handled by `OnnxAudioScorerTransformer`.
 
 ### Step 4: Create an Estimator
 
@@ -234,7 +200,27 @@ public sealed class MyModelEstimator : IEstimator<MyModelTransformer>
 
     public MyModelTransformer Fit(IDataView input)
     {
-        return new MyModelTransformer(_mlContext, _options);
+        var env = (IHostEnvironment)_mlContext;
+
+        // Stage 1: Feature extraction (audio → mel spectrogram)
+        var featureEstimator = new AudioFeatureExtractionEstimator(env,
+            new AudioFeatureExtractionOptions { /* configure from _options */ });
+        var featureTransformer = featureEstimator.Fit(input);
+
+        // Stage 2: ONNX scoring (features → raw model output)
+        var featuredData = featureTransformer.Transform(input);
+        var scorerEstimator = new OnnxAudioScorerEstimator(env,
+            new OnnxAudioScorerOptions { ModelPath = _options.ModelPath, /* ... */ });
+        var scorerTransformer = scorerEstimator.Fit(featuredData);
+
+        // Stage 3: Task-specific post-processing (raw scores → final output)
+        var scoredData = scorerTransformer.Transform(featuredData);
+        var postProcessEstimator = new MyPostProcessEstimator(env, _options);
+        var postProcessTransformer = postProcessEstimator.Fit(scoredData);
+
+        return new MyModelTransformer(
+            _mlContext, _options,
+            featureTransformer, scorerTransformer, postProcessTransformer);
     }
 
     public SchemaShape GetOutputSchema(SchemaShape inputSchema)
@@ -518,16 +504,16 @@ ITransformer.Transform(IDataView)       → IDataView
 ### Estimator Responsibilities
 
 1. **Validate options** in the constructor (model path exists, required fields set).
-2. **`Fit()`** creates and returns a transformer. For ONNX models, `Fit()` doesn't actually train — it just instantiates the transformer with the validated options.
+2. **`Fit()`** creates and returns a transformer. For encoder-only ONNX models, `Fit()` composes 3 sub-transforms (feature extraction → ONNX scoring → post-processing). For encoder-decoder models, it instantiates the transformer directly.
 3. **`GetOutputSchema()`** declares what output columns the transform produces.
 
 ### Transformer Responsibilities
 
-1. **Constructor**: create `InferenceSession`, auto-discover tensor names from model metadata.
-2. **`Transform()`**: eager evaluation — read all input rows, process via ONNX, return new `IDataView` via `_mlContext.Data.LoadFromEnumerable()`.
+1. **Constructor**: accept pre-built sub-transforms (for composed transforms) or create `InferenceSession` (for encoder-decoder transforms).
+2. **`Transform()`**: for encoder-only transforms, use the **composed lazy** pattern — chain sub-transforms over the `IDataView`. For encoder-decoder transforms (ASR, TTS), use **eager evaluation** — autoregressive loops don't decompose into lazy sub-transforms.
 3. **`GetOutputSchema()`**: declare output schema with `DataViewSchema.Builder`.
 4. **`ICanSaveModel.Save()`**: throw `NotSupportedException` (ONNX models are external files).
-5. **`IDisposable`**: dispose the `InferenceSession`.
+5. **`IDisposable`**: dispose sub-transforms (composed) or the `InferenceSession` (encoder-decoder).
 
 ### The SchemaShape.Column Workaround
 

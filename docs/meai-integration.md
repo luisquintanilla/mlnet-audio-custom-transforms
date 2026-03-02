@@ -30,17 +30,25 @@ Uses the generic MEAI embedding interface with `AudioData` as input type. This i
 
 ```csharp
 using Microsoft.Extensions.AI;
+using Microsoft.ML;
 using MLNet.Audio.Core;
 using MLNet.AudioInference.Onnx;
 
+var options = new OnnxAudioEmbeddingOptions
+{
+    ModelPath = "models/clap/onnx/model.onnx",
+    FeatureExtractor = new MelSpectrogramExtractor(16000),
+    Pooling = AudioPoolingStrategy.MeanPooling,
+    Normalize = true
+};
+
+var mlContext = new MLContext();
+var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
+var emptyData = mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>());
+var transformer = estimator.Fit(emptyData);
+
 IEmbeddingGenerator<AudioData, Embedding<float>> generator =
-    new OnnxAudioEmbeddingGenerator(new OnnxAudioEmbeddingOptions
-    {
-        ModelPath = "models/clap/onnx/model.onnx",
-        FeatureExtractor = new MelSpectrogramExtractor(16000),
-        Pooling = AudioPoolingStrategy.MeanPooling,
-        Normalize = true
-    });
+    new OnnxAudioEmbeddingGenerator(transformer);
 
 var audio = AudioIO.LoadWav("speech.wav");
 var embeddings = await generator.GenerateAsync([audio]);
@@ -50,8 +58,13 @@ var vector = embeddings[0].Vector; // ReadOnlyMemory<float>
 Works with DI:
 
 ```csharp
-builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(
-    new OnnxAudioEmbeddingGenerator(options));
+builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(sp =>
+{
+    var mlContext = new MLContext();
+    var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
+    var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
+    return new OnnxAudioEmbeddingGenerator(transformer);
+});
 ```
 
 ## Speech-to-Text Client
@@ -171,8 +184,13 @@ Register all audio AI services in a typical ASP.NET Core app:
 
 ```csharp
 // In Program.cs
-builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(
-    new OnnxAudioEmbeddingGenerator(embeddingOptions));
+builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(sp =>
+{
+    var mlContext = new MLContext();
+    var estimator = mlContext.Transforms.OnnxAudioEmbedding(embeddingOptions);
+    var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
+    return new OnnxAudioEmbeddingGenerator(transformer);
+});
 
 builder.Services.AddSingleton<ISpeechToTextClient>(
     new OnnxSpeechToTextClient(sttOptions));
@@ -203,7 +221,11 @@ MEAI supports middleware wrapping (caching, logging, etc.) via the builder patte
 
 ```csharp
 // Logging decorator for audio embeddings
-var generator = new OnnxAudioEmbeddingGenerator(options)
+var mlContext = new MLContext();
+var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
+var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
+
+var generator = new OnnxAudioEmbeddingGenerator(transformer)
     .AsBuilder()
     .UseLogging()
     .Build();

@@ -39,6 +39,12 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
          → argmax + label mapping → PredictedLabel
 ```
 
+> **Internal pipeline:** The `OnnxAudioClassificationTransformer` facade composes three sub-transforms:
+>
+> 1. **Stage 1:** `AudioFeatureExtractionTransformer` — converts raw audio into mel spectrogram features
+> 2. **Stage 2:** `OnnxAudioScorerTransformer` — runs the ONNX model on extracted features to produce raw output logits
+> 3. **Stage 3:** `AudioClassificationPostProcessTransformer` — applies softmax, argmax, and label mapping to produce predicted labels and probabilities
+
 ### Key Types
 
 | Type | Role |
@@ -47,6 +53,9 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 | `OnnxAudioClassificationTransformer` | `ITransformer, IDisposable` — runs inference |
 | `OnnxAudioClassificationOptions` | All configuration properties |
 | `AudioClassificationResult` | Structured output from the direct `Classify` API |
+| `AudioFeatureExtractionTransformer` | Stage 1 sub-transform — audio → mel features |
+| `OnnxAudioScorerTransformer` | Stage 2 sub-transform — features → ONNX output |
+| `AudioClassificationPostProcessTransformer` | Stage 3 sub-transform — scores → labels + probabilities |
 
 ### Options
 
@@ -66,7 +75,7 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 
 ### Code Examples
 
-**Direct API — classify a list of audio files:**
+**ML.NET pipeline (primary) — batch processing with IDataView:**
 
 ```csharp
 var mlContext = new MLContext();
@@ -75,21 +84,38 @@ var options = new OnnxAudioClassificationOptions
 {
     ModelPath = "models/ast/onnx/model.onnx",
     FeatureExtractor = new MelSpectrogramExtractor(16000) { NumMelBins = 128 },
-    Labels = new[] { "Speech", "Music", "Silence" }
+    Labels = new[] { "Speech", "Music", "Silence" },
+    GpuDeviceId = 0 // use GPU
 };
 
-var estimator = mlContext.Transforms.OnnxAudioClassification(options);
-var emptyData = mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>());
-var transformer = estimator.Fit(emptyData);
+var data = mlContext.Data.LoadFromEnumerable(new[]
+{
+    new AudioInput { Audio = AudioIO.LoadWav("audio1.wav").Samples },
+    new AudioInput { Audio = AudioIO.LoadWav("audio2.wav").Samples }
+});
 
-// Direct API: classify without building a full pipeline
+var pipeline = mlContext.Transforms.OnnxAudioClassification(options);
+var model = pipeline.Fit(data);
+var output = model.Transform(data);
+
+var results = mlContext.Data.CreateEnumerable<ClassificationOutput>(output, reuseRowObject: false);
+
+foreach (var result in results)
+{
+    Console.WriteLine($"Label: {result.PredictedLabel}, Score: {result.Score:P1}");
+}
+```
+
+**For convenience, use the direct API:**
+
+```csharp
 var audioFiles = new[]
 {
     AudioIO.LoadWav("samples/speech.wav"),
     AudioIO.LoadWav("samples/music.wav")
 };
 
-AudioClassificationResult[] results = transformer.Classify(audioFiles);
+AudioClassificationResult[] results = model.Classify(audioFiles);
 
 foreach (var result in results)
 {
@@ -97,32 +123,6 @@ foreach (var result in results)
     for (int i = 0; i < result.Labels.Length; i++)
         Console.WriteLine($"  {result.Labels[i]}: {result.Probabilities[i]:P1}");
 }
-```
-
-**ML.NET pipeline — batch processing with IDataView:**
-
-```csharp
-var pipeline = mlContext.Transforms.OnnxAudioClassification(
-    new OnnxAudioClassificationOptions
-    {
-        ModelPath = "models/ast/onnx/model.onnx",
-        FeatureExtractor = new MelSpectrogramExtractor(16000) { NumMelBins = 128 },
-        Labels = new[] { "Speech", "Music", "Silence" },
-        GpuDeviceId = 0 // use GPU
-    });
-
-var data = mlContext.Data.LoadFromEnumerable(new[]
-{
-    new AudioInput { Audio = AudioIO.LoadWav("audio1.wav") },
-    new AudioInput { Audio = AudioIO.LoadWav("audio2.wav") }
-});
-
-var model = pipeline.Fit(data);
-var results = model.Transform(data);
-
-// Read results from the IDataView
-var predictedLabels = results.GetColumn<string>("PredictedLabel").ToArray();
-var scores = results.GetColumn<float>("Score").ToArray();
 ```
 
 ### Supported Models
@@ -158,6 +158,12 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
          → L2 normalization (optional) → Embedding
 ```
 
+> **Internal pipeline:** The `OnnxAudioEmbeddingTransformer` facade composes three sub-transforms:
+>
+> 1. **Stage 1:** `AudioFeatureExtractionTransformer` — converts raw audio into mel spectrogram features
+> 2. **Stage 2:** `OnnxAudioScorerTransformer` — runs the ONNX model on extracted features to produce hidden states
+> 3. **Stage 3:** `AudioEmbeddingPoolerTransformer` — applies pooling strategy and optional L2 normalization to produce the final embedding vector
+
 ### Key Types
 
 | Type | Role |
@@ -167,6 +173,9 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 | `OnnxAudioEmbeddingOptions` | All configuration properties |
 | `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` — MEAI integration |
 | `AudioPoolingStrategy` | Enum: `MeanPooling`, `MaxPooling`, `ClsToken` |
+| `AudioFeatureExtractionTransformer` | Stage 1 sub-transform — audio → mel features |
+| `OnnxAudioScorerTransformer` | Stage 2 sub-transform — features → ONNX output |
+| `AudioEmbeddingPoolerTransformer` | Stage 3 sub-transform — pooling + normalization → embedding |
 
 ### Options
 
@@ -193,7 +202,7 @@ AudioData → MelSpectrogramExtractor → mel spectrogram (float[,])
 
 ### Code Examples
 
-**Direct API — generate embeddings for similarity comparison:**
+**ML.NET pipeline (primary) — batch embedding with IDataView:**
 
 ```csharp
 var mlContext = new MLContext();
@@ -206,38 +215,35 @@ var options = new OnnxAudioEmbeddingOptions
     Normalize = true
 };
 
-var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
-var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
-
-Console.WriteLine($"Embedding dimension: {transformer.EmbeddingDimension}");
-
-var audios = new[]
+var data = mlContext.Data.LoadFromEnumerable(new[]
 {
-    AudioIO.LoadWav("clip_a.wav"),
-    AudioIO.LoadWav("clip_b.wav")
-};
+    new AudioInput { Audio = AudioIO.LoadWav("clip_a.wav").Samples },
+    new AudioInput { Audio = AudioIO.LoadWav("clip_b.wav").Samples }
+});
 
-float[][] embeddings = transformer.GenerateEmbeddings(audios);
+var pipeline = mlContext.Transforms.OnnxAudioEmbedding(options);
+var model = pipeline.Fit(data);
+var output = model.Transform(data);
+
+var results = mlContext.Data.CreateEnumerable<EmbeddingOutput>(output, reuseRowObject: false);
+var embeddings = results.Select(r => r.Embedding).ToArray();
 
 // Cosine similarity (already L2-normalized, so dot product = cosine similarity)
 float similarity = TensorPrimitives.Dot(embeddings[0], embeddings[1]);
 Console.WriteLine($"Similarity: {similarity:F4}");
 ```
 
-**ML.NET pipeline:**
+**For convenience, use the direct API:**
 
 ```csharp
-var pipeline = mlContext.Transforms.OnnxAudioEmbedding(
-    new OnnxAudioEmbeddingOptions
-    {
-        ModelPath = "models/ast/onnx/model.onnx",
-        FeatureExtractor = new MelSpectrogramExtractor(16000) { NumMelBins = 128 },
-        Pooling = AudioPoolingStrategy.ClsToken
-    });
+var audios = new[]
+{
+    AudioIO.LoadWav("clip_a.wav"),
+    AudioIO.LoadWav("clip_b.wav")
+};
 
-var model = pipeline.Fit(data);
-var results = model.Transform(data);
-var embeddings = results.GetColumn<float[]>("Embedding").ToArray();
+float[][] embeddings = model.GenerateEmbeddings(audios);
+Console.WriteLine($"Embedding dimension: {embeddings[0].Length}");
 ```
 
 **MEAI integration — `IEmbeddingGenerator<AudioData, Embedding<float>>`:**
