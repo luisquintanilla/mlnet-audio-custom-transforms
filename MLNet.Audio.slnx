@@ -3,6 +3,7 @@
     <Project Path="src/MLNet.Audio.Core/MLNet.Audio.Core.csproj" />
     <Project Path="src/MLNet.AudioInference.Onnx/MLNet.AudioInference.Onnx.csproj" />
     <Project Path="src/MLNet.ASR.OnnxGenAI/MLNet.ASR.OnnxGenAI.csproj" />
+    <Project Path="src/MLNet.Audio.DataIngestion/MLNet.Audio.DataIngestion.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/AudioClassification/AudioClassification.csproj" />
@@ -12,5 +13,6 @@
     <Project Path="samples/WhisperTranscription/WhisperTranscription.csproj" />
     <Project Path="samples/WhisperRawOnnx/WhisperRawOnnx.csproj" />
     <Project Path="samples/TextToSpeech/TextToSpeech.csproj" />
+    <Project Path="samples/AudioDataIngestion/AudioDataIngestion.csproj" />
   </Folder>
 </Solution>
