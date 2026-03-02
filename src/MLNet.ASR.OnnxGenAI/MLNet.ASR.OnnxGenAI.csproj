@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>MLNet.ASR.OnnxGenAI</PackageId>
+    <Description>Local speech-to-text (ASR) for ML.NET using Whisper via ONNX Runtime GenAI. Provides OnnxSpeechToTextTransformer and OnnxSpeechToTextClient (ISpeechToTextClient).</Description>
+    <PackageTags>ml.net;onnx;whisper;asr;speech-to-text;onnxruntime-genai;transformers</PackageTags>
+    <NoWarn>$(NoWarn);MEAI001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MLNet.Audio.Core\MLNet.Audio.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
+    <PackageReference Include="Microsoft.ML" Version="5.0.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.Managed" Version="0.12.1" />
+  </ItemGroup>
+
+</Project>

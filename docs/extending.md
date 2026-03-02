@@ -1,0 +1,672 @@
+# Extending the Framework
+
+## Overview
+
+This guide explains how to add new audio models and transforms to the framework. Whether you're adding support for a new ONNX model or creating an entirely new audio task, the patterns are consistent and composable.
+
+For background on the layered architecture, see [architecture.md](architecture.md). For a reference of existing transforms, see [transforms-guide.md](transforms-guide.md).
+
+---
+
+## Adding a New Encoder-Only Model
+
+Encoder-only models (classification, embeddings, VAD) are the simplest. Follow the existing patterns in `src/MLNet.AudioInference.Onnx/`.
+
+### Step 1: Create (or Reuse) an AudioFeatureExtractor
+
+If the model needs a different feature extraction than existing extractors, create a new one in `src/MLNet.Audio.Core/`:
+
+```csharp
+public class MyModelFeatureExtractor : AudioFeatureExtractor
+{
+    public override int SampleRate => 16000;
+
+    protected override float[,] ExtractFeatures(float[] samples)
+    {
+        // Your feature extraction logic here.
+        // Return a [frames × features] array.
+    }
+}
+```
+
+The base class `AudioFeatureExtractor` (in `MLNet.Audio.Core`) handles:
+
+- Resampling input audio to the expected sample rate via `AudioIO.Resample()`
+- Converting stereo to mono via `AudioIO.ToMono()`
+- Calling your `ExtractFeatures()` implementation with clean mono PCM samples
+
+Existing extractors you can reuse:
+
+| Extractor | Location | Notes |
+|-----------|----------|-------|
+| `MelSpectrogramExtractor` | `MLNet.Audio.Core` | Generic log-mel spectrogram. Configurable bins, FFT size, hop length, frequency range, window function. |
+| `WhisperFeatureExtractor` | `MLNet.Audio.Core` | Whisper-specific. 30-second padding/chunking, 80 mel bins, 400 FFT, 160 hop. |
+
+### Step 2: Create an Options Class
+
+Follow the pattern from `OnnxAudioClassificationOptions` (in `Classification/`):
+
+```csharp
+using MLNet.Audio.Core;
+
+namespace MLNet.AudioInference.Onnx;
+
+public class MyModelOptions
+{
+    /// <summary>Path to the ONNX model file.</summary>
+    public required string ModelPath { get; set; }
+
+    /// <summary>Audio feature extractor to use for preprocessing.</summary>
+    public required AudioFeatureExtractor FeatureExtractor { get; set; }
+
+    /// <summary>Name of the input column containing audio samples (float[]). Default: "Audio".</summary>
+    public string InputColumnName { get; set; } = "Audio";
+
+    /// <summary>Name of the output column. Default: "MyOutput".</summary>
+    public string OutputColumnName { get; set; } = "MyOutput";
+
+    /// <summary>ONNX input tensor name. Null = auto-detect from model.</summary>
+    public string? InputTensorName { get; set; }
+
+    /// <summary>ONNX output tensor name. Null = auto-detect from model.</summary>
+    public string? OutputTensorName { get; set; }
+
+    /// <summary>Sample rate of the input audio. Default: 16000.</summary>
+    public int SampleRate { get; set; } = 16000;
+
+    /// <summary>GPU device ID. Null = CPU only.</summary>
+    public int? GpuDeviceId { get; set; }
+}
+```
+
+Key patterns:
+- Use `required` for properties that must be set (model path, feature extractor).
+- Provide sensible defaults for everything else.
+- Include `InputTensorName`/`OutputTensorName` with null = auto-detect.
+
+### Step 3: Create a Transformer
+
+The transformer does the actual work. Follow `OnnxAudioClassificationTransformer` as a template:
+
+```csharp
+using Microsoft.ML;
+using Microsoft.ML.Data;
+using Microsoft.ML.OnnxRuntime;
+using MLNet.Audio.Core;
+
+namespace MLNet.AudioInference.Onnx;
+
+public sealed class MyModelTransformer : ITransformer, IDisposable
+{
+    private readonly MLContext _mlContext;
+    private readonly MyModelOptions _options;
+    private readonly InferenceSession _session;
+    private readonly string _inputTensorName;
+    private readonly string _outputTensorName;
+
+    public bool IsRowToRowMapper => true;
+
+    internal MyModelTransformer(MLContext mlContext, MyModelOptions options)
+    {
+        _mlContext = mlContext;
+        _options = options;
+
+        // Create ONNX Runtime session
+        var sessionOptions = new SessionOptions();
+        if (options.GpuDeviceId.HasValue)
+        {
+            try { sessionOptions.AppendExecutionProvider_CUDA(options.GpuDeviceId.Value); }
+            catch { /* fallback to CPU */ }
+        }
+        _session = new InferenceSession(options.ModelPath, sessionOptions);
+
+        // Auto-discover tensor names from model metadata
+        _inputTensorName = options.InputTensorName
+            ?? _session.InputNames.FirstOrDefault(n => n.Contains("input"))
+            ?? _session.InputNames[0];
+        _outputTensorName = options.OutputTensorName
+            ?? _session.OutputNames.FirstOrDefault(n => n.Contains("logits"))
+            ?? _session.OutputNames[0];
+    }
+
+    /// <summary>
+    /// Direct API — use outside ML.NET pipelines.
+    /// </summary>
+    public MyResult[] Process(IReadOnlyList<AudioData> audioInputs)
+    {
+        var results = new MyResult[audioInputs.Count];
+
+        for (int i = 0; i < audioInputs.Count; i++)
+        {
+            // Stage 1: Feature extraction
+            var features = _options.FeatureExtractor.Extract(audioInputs[i]);
+            int frames = features.GetLength(0);
+            int featureDim = features.GetLength(1);
+
+            var flatFeatures = new float[frames * featureDim];
+            Buffer.BlockCopy(features, 0, flatFeatures, 0, flatFeatures.Length * sizeof(float));
+
+            // Stage 2: ONNX inference
+            using var ortValue = OrtValue.CreateTensorValueFromMemory(
+                flatFeatures, [1, frames, featureDim]);
+            var inputs = new Dictionary<string, OrtValue> { [_inputTensorName] = ortValue };
+
+            using var runResults = _session.Run(new RunOptions(), inputs, [_outputTensorName]);
+            var outputTensor = runResults[0].GetTensorDataAsSpan<float>();
+
+            // Stage 3: Post-process the output
+            results[i] = PostProcess(outputTensor);
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// ML.NET Transform — eager evaluation pattern.
+    /// </summary>
+    public IDataView Transform(IDataView input)
+    {
+        var audioSamples = ReadAudioColumn(input);
+        var audioInputs = audioSamples
+            .Select(s => new AudioData(s, _options.SampleRate)).ToList();
+        var results = Process(audioInputs);
+
+        var outputRows = results.Select(r => new MyOutputRow { /* map fields */ }).ToArray();
+        return _mlContext.Data.LoadFromEnumerable(outputRows);
+    }
+
+    public DataViewSchema GetOutputSchema(DataViewSchema inputSchema)
+    {
+        var builder = new DataViewSchema.Builder();
+        builder.AddColumn(_options.OutputColumnName, /* appropriate DataViewType */);
+        return builder.ToSchema();
+    }
+
+    public IRowToRowMapper GetRowToRowMapper(DataViewSchema inputSchema)
+        => throw new NotSupportedException("Use Transform() directly.");
+
+    void ICanSaveModel.Save(ModelSaveContext ctx)
+        => throw new NotSupportedException("Saving not supported.");
+
+    public void Dispose() => _session?.Dispose();
+
+    // Helper: read float[] audio from IDataView column
+    private List<float[]> ReadAudioColumn(IDataView data) { /* same as classification */ }
+
+    // Your post-processing logic
+    private MyResult PostProcess(ReadOnlySpan<float> output) { /* ... */ }
+}
+```
+
+Key implementation notes:
+- Use **eager evaluation**: `Transform()` reads all rows, processes them, and returns a new `IDataView` via `_mlContext.Data.LoadFromEnumerable()`. This is the same pattern used by all transforms in this framework.
+- Provide a **direct API** method (like `Classify()` or `GenerateEmbeddings()`) for use outside ML.NET pipelines.
+- **Auto-detect tensor names** from ONNX model metadata rather than hardcoding.
+- Use `OrtValue.CreateTensorValueFromMemory()` for zero-copy tensor creation.
+
+### Step 4: Create an Estimator
+
+The estimator creates the transformer. Follow `OnnxAudioClassificationEstimator`:
+
+```csharp
+using System.Reflection;
+using Microsoft.ML;
+using Microsoft.ML.Data;
+
+namespace MLNet.AudioInference.Onnx;
+
+public sealed class MyModelEstimator : IEstimator<MyModelTransformer>
+{
+    private readonly MLContext _mlContext;
+    private readonly MyModelOptions _options;
+
+    public MyModelEstimator(MLContext mlContext, MyModelOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(mlContext);
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (!File.Exists(options.ModelPath))
+            throw new FileNotFoundException($"ONNX model not found: {options.ModelPath}");
+
+        _mlContext = mlContext;
+        _options = options;
+    }
+
+    public MyModelTransformer Fit(IDataView input)
+    {
+        return new MyModelTransformer(_mlContext, _options);
+    }
+
+    public SchemaShape GetOutputSchema(SchemaShape inputSchema)
+    {
+        var columns = inputSchema.ToDictionary(c => c.Name, c => c);
+
+        // SchemaShape.Column has an internal constructor — use reflection
+        var colCtor = typeof(SchemaShape.Column)
+            .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+            .First(c => c.GetParameters().Length == 5);
+
+        columns[_options.OutputColumnName] = (SchemaShape.Column)colCtor.Invoke([
+            _options.OutputColumnName,
+            SchemaShape.Column.VectorKind.Scalar,       // or .Vector, .VariableVector
+            (DataViewType)TextDataViewType.Instance,     // or NumberDataViewType.Single
+            false,
+            (SchemaShape?)null
+        ]);
+
+        return new SchemaShape(columns.Values);
+    }
+}
+```
+
+> **Important:** `SchemaShape.Column`'s 5-parameter constructor is `internal` in ML.NET. All estimators in this framework use the reflection workaround shown above. The 5 parameters are: `name`, `vectorKind`, `itemType`, `isKey`, `metadata`.
+
+### Step 5: Add an MLContext Extension Method
+
+In `src/MLNet.AudioInference.Onnx/MLContextExtensions.cs`, add an entry point:
+
+```csharp
+/// <summary>
+/// Creates a MyModel estimator using an ONNX model.
+/// </summary>
+public static MyModelEstimator MyModel(
+    this TransformsCatalog catalog,
+    MyModelOptions options)
+{
+    var mlContext = GetMLContext(catalog);
+    return new MyModelEstimator(mlContext, options);
+}
+```
+
+This uses the existing `GetMLContext()` helper which extracts the `MLContext` from the `TransformsCatalog` via reflection.
+
+### Step 6: (Optional) Add an MEAI Interface Wrapper
+
+If the task maps to a `Microsoft.Extensions.AI` interface, create a wrapper class. See [Adding MEAI Support](#adding-meai-support) below.
+
+---
+
+## Adding a New Encoder-Decoder Model
+
+Encoder-decoder models (ASR, TTS) are more complex because they use autoregressive decoding with KV cache. Follow `OnnxWhisperTransformer` (ASR) or `OnnxSpeechT5TtsTransformer` (TTS) as templates.
+
+### Architecture Overview
+
+Encoder-decoder models typically have **two or three** ONNX models:
+
+| Component | Purpose | Example |
+|-----------|---------|---------|
+| **Encoder** | Processes input features → hidden states | `encoder_model.onnx` |
+| **Decoder** | Autoregressive token/frame generation with KV cache | `decoder_model_merged.onnx` |
+| **Vocoder** (TTS only) | Converts mel spectrogram → waveform | `vocoder_model.onnx` |
+
+### The KV Cache Pattern
+
+Both Whisper and SpeechT5 use the same KV cache pattern from HuggingFace Optimum exports:
+
+**Inputs:**
+- `past_key_values.{layer}.decoder.key` — previous decoder self-attention cache
+- `past_key_values.{layer}.decoder.value` — previous decoder self-attention cache
+- `past_key_values.{layer}.encoder.key` — cross-attention cache (encoder output)
+- `past_key_values.{layer}.encoder.value` — cross-attention cache (encoder output)
+- `use_cache_branch` — scalar bool: `false` on first step, `true` after
+
+**Outputs:**
+- `present.{layer}.decoder.key` — updated decoder cache
+- `present.{layer}.decoder.value` — updated decoder cache
+- `present.{layer}.encoder.key` — updated cross-attention cache
+- `present.{layer}.encoder.value` — updated cross-attention cache
+
+**Decoding loop:**
+
+1. First step: `use_cache_branch = false`, empty `past_key_values` tensors (seq_len = 0).
+2. Run decoder, get output token/frame and `present.*` tensors.
+3. Subsequent steps: `use_cache_branch = true`, feed `present` → `past_key_values`.
+4. Repeat until EOS token (ASR) or stop probability threshold (TTS).
+
+For ASR, see `WhisperKvCacheManager` — a dedicated class that manages cache tensors across decoder steps. For TTS, `OnnxSpeechT5TtsTransformer` manages cache inline using local variables (same pattern, simpler lifecycle).
+
+### Auto-Detecting Model Dimensions
+
+Rather than hardcoding `numLayers`, `numHeads`, and `headDim`, detect them from the ONNX model metadata. See `WhisperKvCacheManager.DetectFromModel()`:
+
+```csharp
+public static (int numLayers, int numHeads, int headDim) DetectFromModel(
+    InferenceSession decoderSession)
+{
+    // Count layers by probing for past_key_values.{i}.decoder.key
+    int numLayers = 0;
+    while (decoderSession.InputMetadata.ContainsKey($"past_key_values.{numLayers}.decoder.key"))
+        numLayers++;
+
+    if (numLayers == 0)
+        throw new InvalidOperationException(
+            "Could not detect decoder layers. Expected 'past_key_values.0.decoder.key' in model inputs.");
+
+    // Shape is [1, num_heads, seq_len, head_dim]
+    var meta = decoderSession.InputMetadata[$"past_key_values.0.decoder.key"];
+    var dims = meta.Dimensions;
+    int numHeads = dims[1];
+    int headDim = dims[3];
+
+    return (numLayers, numHeads, headDim);
+}
+```
+
+`OnnxSpeechT5TtsTransformer.DetectDecoderDimensions()` uses the same approach. Both transformers also accept override values via options (e.g., `NumDecoderLayers`, `NumAttentionHeads`) for models with non-standard metadata.
+
+### Implementing the Decoder Loop
+
+Here's the general pattern (simplified from the actual implementations):
+
+```csharp
+// 1. Run encoder once
+using var encoderOutput = RunEncoder(audioFeatures);
+
+// 2. Initialize state
+int numLayers = ...; // from DetectFromModel
+bool useCache = false;
+var decoderKeys = new float[numLayers][];
+var decoderValues = new float[numLayers][];
+var encoderKeys = new float[numLayers][];
+var encoderValues = new float[numLayers][];
+
+// 3. Autoregressive decoding loop
+for (int step = 0; step < maxSteps; step++)
+{
+    // Build inputs with KV cache
+    var inputs = new List<NamedOnnxValue>();
+    inputs.Add(/* decoder_input_ids or output_sequence */);
+    inputs.Add(/* encoder_hidden_states from step 1 */);
+
+    // Add cache tensors
+    var cacheTensor = new DenseTensor<bool>(new[] { useCache }, new[] { 1 });
+    inputs.Add(NamedOnnxValue.CreateFromTensor("use_cache_branch", cacheTensor));
+
+    for (int i = 0; i < numLayers; i++)
+    {
+        if (useCache && decoderKeys[i] != null)
+        {
+            // Feed previous present → past_key_values
+            inputs.Add(NamedOnnxValue.CreateFromTensor(
+                $"past_key_values.{i}.decoder.key", BuildTensor(decoderKeys[i])));
+            // ... same for .value, .encoder.key, .encoder.value
+        }
+        else
+        {
+            // Empty tensors with seq_len = 0
+            inputs.Add(NamedOnnxValue.CreateFromTensor(
+                $"past_key_values.{i}.decoder.key",
+                new DenseTensor<float>(new[] { 1, numHeads, 0, headDim })));
+            // ... same for others
+        }
+    }
+
+    // Run decoder
+    using var results = decoderSession.Run(inputs);
+    var outputDict = results.ToDictionary(r => r.Name, r => r);
+
+    // Extract output token (ASR) or mel frame (TTS)
+    ProcessStepOutput(outputDict);
+
+    // Update KV cache from present.* outputs
+    for (int i = 0; i < numLayers; i++)
+    {
+        decoderKeys[i] = ExtractData(outputDict[$"present.{i}.decoder.key"]);
+        decoderValues[i] = ExtractData(outputDict[$"present.{i}.decoder.value"]);
+        if (!useCache) // encoder cache only changes on first step
+        {
+            encoderKeys[i] = ExtractData(outputDict[$"present.{i}.encoder.key"]);
+            encoderValues[i] = ExtractData(outputDict[$"present.{i}.encoder.value"]);
+        }
+    }
+
+    useCache = true;
+
+    // Check stop condition
+    if (ShouldStop(outputDict))
+        break;
+}
+```
+
+---
+
+## Creating a New AudioFeatureExtractor
+
+For models that need different preprocessing, add a new class in `src/MLNet.Audio.Core/`:
+
+```csharp
+using System.Numerics.Tensors;
+
+namespace MLNet.Audio.Core;
+
+/// <summary>
+/// Feature extractor for Wav2Vec2-style models that process raw waveform directly.
+/// </summary>
+public class Wav2Vec2FeatureExtractor : AudioFeatureExtractor
+{
+    public override int SampleRate => 16000;
+
+    protected override float[,] ExtractFeatures(float[] samples)
+    {
+        // Wav2Vec2 processes raw waveform — normalize with mean subtraction + variance norm
+        float mean = TensorPrimitives.Sum(samples) / samples.Length;
+        var centered = new float[samples.Length];
+        for (int i = 0; i < samples.Length; i++)
+            centered[i] = samples[i] - mean;
+
+        float variance = TensorPrimitives.SumOfSquares(centered) / centered.Length;
+        float stdDev = MathF.Sqrt(variance + 1e-7f);
+        for (int i = 0; i < centered.Length; i++)
+            centered[i] /= stdDev;
+
+        // Return [samples × 1] — raw waveform as single-feature frames
+        var result = new float[samples.Length, 1];
+        for (int i = 0; i < samples.Length; i++)
+            result[i, 0] = centered[i];
+
+        return result;
+    }
+}
+```
+
+The base class `AudioFeatureExtractor.Extract()` handles resampling and mono conversion before calling your `ExtractFeatures()`, so you only need to focus on the actual feature computation.
+
+---
+
+## Creating a Custom Tokenizer
+
+### Using Microsoft.ML.Tokenizers
+
+For models that use SentencePiece tokenization (like SpeechT5), use the `Microsoft.ML.Tokenizers` package:
+
+```csharp
+using Microsoft.ML.Tokenizers;
+
+// Load a SentencePiece model
+using var stream = File.OpenRead("spm_char.model");
+var tokenizer = SentencePieceTokenizer.Create(stream);
+var ids = tokenizer.EncodeToIds(text);
+```
+
+See `OnnxSpeechT5TtsTransformer` for a production example of this pattern.
+
+### Custom Implementation
+
+For models with non-standard tokenization, implement a custom tokenizer. See `WhisperTokenizer` in `src/MLNet.Audio.Core/Tokenizers/` — it implements:
+
+- **BPE vocabulary** for text tokens
+- **Special tokens**: `<|startoftranscript|>`, `<|en|>`, `<|transcribe|>`, `<|notimestamps|>`
+- **Timestamp tokens**: `<|0.00|>` through `<|30.00|>` at 20ms resolution
+- **Language tokens** for 99+ languages
+
+### Audio Codec Tokenizers
+
+For neural codec models, extend `AudioCodecTokenizer` (abstract base class in `MLNet.Audio.Core/Tokenizers/`). See `EnCodecTokenizer` in `MLNet.AudioInference.Onnx/Shared/` for an example.
+
+---
+
+## The IEstimator/ITransformer Pattern
+
+Every transform in this framework follows the ML.NET contract:
+
+```
+IEstimator<ITransformer>.Fit(IDataView) → ITransformer
+ITransformer.Transform(IDataView)       → IDataView
+```
+
+### Estimator Responsibilities
+
+1. **Validate options** in the constructor (model path exists, required fields set).
+2. **`Fit()`** creates and returns a transformer. For ONNX models, `Fit()` doesn't actually train — it just instantiates the transformer with the validated options.
+3. **`GetOutputSchema()`** declares what output columns the transform produces.
+
+### Transformer Responsibilities
+
+1. **Constructor**: create `InferenceSession`, auto-discover tensor names from model metadata.
+2. **`Transform()`**: eager evaluation — read all input rows, process via ONNX, return new `IDataView` via `_mlContext.Data.LoadFromEnumerable()`.
+3. **`GetOutputSchema()`**: declare output schema with `DataViewSchema.Builder`.
+4. **`ICanSaveModel.Save()`**: throw `NotSupportedException` (ONNX models are external files).
+5. **`IDisposable`**: dispose the `InferenceSession`.
+
+### The SchemaShape.Column Workaround
+
+`SchemaShape.Column` has an internal 5-parameter constructor that external code can't access directly. All estimators in this framework use this reflection pattern:
+
+```csharp
+var colCtor = typeof(SchemaShape.Column)
+    .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+    .First(c => c.GetParameters().Length == 5);
+
+// Parameters: (name, vectorKind, itemType, isKey, metadata)
+columns[name] = (SchemaShape.Column)colCtor.Invoke([
+    name,
+    SchemaShape.Column.VectorKind.Scalar,      // .Scalar, .Vector, or .VariableVector
+    (DataViewType)TextDataViewType.Instance,    // or NumberDataViewType.Single, etc.
+    false,                                       // isKey
+    (SchemaShape?)null                           // metadata
+]);
+```
+
+Common `VectorKind` choices:
+- `Scalar` — single value (predicted label, confidence score)
+- `Vector` — fixed-length array (probabilities, embeddings)
+- `VariableVector` — variable-length array (audio samples)
+
+---
+
+## Adding MEAI Support
+
+If the task maps to a `Microsoft.Extensions.AI` interface, create a wrapper class that owns the transformer.
+
+### Pattern
+
+```csharp
+using Microsoft.Extensions.AI;
+using MLNet.Audio.Core;
+
+namespace MLNet.AudioInference.Onnx;
+
+public sealed class MyModelMeaiWrapper : IEmbeddingGenerator<AudioData, Embedding<float>>
+{
+    private readonly MyModelTransformer _transformer;
+
+    public EmbeddingGeneratorMetadata Metadata { get; }
+
+    public MyModelMeaiWrapper(MyModelTransformer transformer, string? modelId = null)
+    {
+        ArgumentNullException.ThrowIfNull(transformer);
+        _transformer = transformer;
+
+        Metadata = new EmbeddingGeneratorMetadata(
+            providerName: "MLNet.AudioInference.Onnx",
+            defaultModelId: modelId);
+    }
+
+    public Task<GeneratedEmbeddings<Embedding<float>>> GenerateAsync(
+        IEnumerable<AudioData> values,
+        EmbeddingGenerationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var audioList = values.ToList();
+        var embeddings = _transformer.GenerateEmbeddings(audioList);
+
+        var result = new GeneratedEmbeddings<Embedding<float>>(
+            embeddings.Select(e => new Embedding<float>(e)).ToList());
+
+        return Task.FromResult(result);
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null)
+    {
+        if (serviceType == typeof(MyModelMeaiWrapper))
+            return this;
+        return null;
+    }
+
+    public void Dispose() => _transformer?.Dispose();
+}
+```
+
+See `OnnxAudioEmbeddingGenerator` for the full production example. The existing MEAI wrappers in this framework are:
+
+| Wrapper | Interface | Location |
+|---------|-----------|----------|
+| `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` | `MEAI/OnnxAudioEmbeddingGenerator.cs` |
+| `OnnxSpeechToTextClient` | `ISpeechToTextClient` | `MLNet.ASR.OnnxGenAI/OnnxSpeechToTextClient.cs` |
+| `OnnxTextToSpeechClient` | `ITextToSpeechClient` | `TTS/OnnxTextToSpeechClient.cs` |
+
+---
+
+## Pipeline Composition
+
+Transforms compose via ML.NET's `.Append()`:
+
+```csharp
+var pipeline = mlContext.Transforms
+    .OnnxWhisper(whisperOptions)           // Audio → Text
+    .Append(mlContext.Transforms.SpeechT5Tts(ttsOptions));  // Text → Audio
+```
+
+**Limitation:** ML.NET pipelines are strictly linear. For non-linear flows (branching, conditional logic, fan-out), use the direct transformer APIs instead:
+
+```csharp
+// Direct API — full control over data flow
+var whisper = new OnnxWhisperTransformer(mlContext, whisperOptions);
+var transcription = whisper.Transcribe(audioData);
+
+if (transcription.Language == "en")
+{
+    var tts = new OnnxSpeechT5TtsTransformer(mlContext, ttsOptions);
+    var outputAudio = tts.Synthesize(transcription.Text);
+}
+```
+
+---
+
+## Checklist for Adding a New Model
+
+Use this checklist when adding a new model or task to the framework:
+
+- [ ] **AudioFeatureExtractor** — Create in `MLNet.Audio.Core/` or reuse an existing one
+- [ ] **Options class** — Create in the appropriate subfolder of `MLNet.AudioInference.Onnx/`
+- [ ] **Transformer** — Implements `ITransformer`, `IDisposable`. Owns the `InferenceSession`.
+- [ ] **Estimator** — Implements `IEstimator<T>`. Validates options, creates transformer.
+- [ ] **MLContext extension** — Add entry point in `MLContextExtensions.cs`
+- [ ] **(Optional) MEAI wrapper** — If task maps to a `Microsoft.Extensions.AI` interface
+- [ ] **Sample** — Create a working sample in `samples/`
+- [ ] **transforms-guide.md** — Document options, usage, and supported models
+- [ ] **architecture.md** — Update if new architectural patterns are introduced
+
+### File Organization Convention
+
+```
+src/MLNet.AudioInference.Onnx/
+├── YourTask/
+│   ├── MyModelOptions.cs
+│   ├── MyModelTransformer.cs
+│   └── MyModelEstimator.cs
+├── MEAI/
+│   └── MyModelMeaiWrapper.cs       (if applicable)
+└── MLContextExtensions.cs           (add your extension method here)
+```

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);MEAI001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MLNet.ASR.OnnxGenAI\MLNet.ASR.OnnxGenAI.csproj" />
+    <ProjectReference Include="..\..\src\MLNet.Audio.Core\MLNet.Audio.Core.csproj" />
+  </ItemGroup>
+
+  <!-- 
+    Users must add a platform-specific ORT GenAI native package for their system, e.g.:
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.12.1" />         (CPU)
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.Cuda" Version="0.12.1" />    (NVIDIA GPU)
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.DirectML" Version="0.12.1" /> (Windows GPU)
+  -->
+
+</Project>

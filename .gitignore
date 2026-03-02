@@ -1,0 +1,56 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+
+# IDE
+.idea/
+*.swp
+*~
+
+# ONNX models (large binary files)
+*.onnx
+!*.Onnx/
+
+# Model artifacts (downloaded with models)
+*.npy
+*.npz
+*.bin
+*.safetensors
+*.spm
+samples/*/models/
+
+# ML.NET saved models
+*.mlnet
+*.zip
+
+# Audio sample files (large)
+*.wav
+*.mp3
+*.flac
+*.ogg
+!samples/**/*.wav
+
+# OS
+Thumbs.db
+.DS_Store

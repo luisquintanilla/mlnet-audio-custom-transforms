@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MLNet.Audio.Core/MLNet.Audio.Core.csproj" />
+    <Project Path="src/MLNet.AudioInference.Onnx/MLNet.AudioInference.Onnx.csproj" />
+    <Project Path="src/MLNet.ASR.OnnxGenAI/MLNet.ASR.OnnxGenAI.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/AudioClassification/AudioClassification.csproj" />
+    <Project Path="samples/AudioEmbeddings/AudioEmbeddings.csproj" />
+    <Project Path="samples/VoiceActivityDetection/VoiceActivityDetection.csproj" />
+    <Project Path="samples/SpeechToText/SpeechToText.csproj" />
+    <Project Path="samples/WhisperTranscription/WhisperTranscription.csproj" />
+    <Project Path="samples/WhisperRawOnnx/WhisperRawOnnx.csproj" />
+    <Project Path="samples/TextToSpeech/TextToSpeech.csproj" />
+  </Folder>
+</Solution>
