@@ -240,3 +240,35 @@ The following capabilities don't exist in MEAI today. We prototyped some of them
 3. **`IVoiceActivityDetector`** — very audio-specific; may not fit MEAI's general-purpose scope.
 4. **`AudioData` as a first-class type** — MEAI has no audio primitive type; we defined our own.
 5. **Streaming audio** — MEAI's streaming patterns work but need audio chunking support for real-time scenarios.
+
+## DataIngestion Integration
+
+The MEAI `IEmbeddingGenerator<AudioData, Embedding<float>>` interface is the bridge between DataIngestion and ML.NET:
+
+```
+DataIngestion Layer:  AudioDocumentReader → AudioSegmentChunker → AudioEmbeddingChunkProcessor
+                                                                         │
+                                                                         ▼
+MEAI Layer:                                        IEmbeddingGenerator<AudioData, Embedding<float>>
+                                                                         │
+                                                                         ▼
+ML.NET Layer:                                      OnnxAudioEmbeddingGenerator → OnnxAudioEmbeddingTransformer
+```
+
+`AudioEmbeddingChunkProcessor` takes an `IEmbeddingGenerator<AudioData, Embedding<float>>` in its constructor — it doesn't know or care whether the embeddings come from CLAP, Wav2Vec2, or any other model. This proves that `Microsoft.Extensions.DataIngestion` is modality-agnostic: the same Reader → Chunker → Processor pattern works for text, PDF, and audio.
+
+```csharp
+// Wire up the 3-layer bridge
+var mlContext = new MLContext();
+var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
+var transformer = estimator.Fit(emptyData);
+
+// Layer 2: MEAI — wraps ML.NET transformer
+IEmbeddingGenerator<AudioData, Embedding<float>> generator =
+    new OnnxAudioEmbeddingGenerator(transformer);
+
+// Layer 3: DataIngestion — uses MEAI generator
+var processor = new AudioEmbeddingChunkProcessor(generator);
+```
+
+See `samples/AudioDataIngestion/` for the full end-to-end pipeline.

@@ -11,6 +11,7 @@ Multi-task audio inference transforms for ML.NET using local ONNX models. Brings
 | `MLNet.Audio.Core` | Audio primitives: `AudioData`, WAV I/O, mel spectrogram, `WhisperTokenizer` | NWaves, System.Numerics.Tensors |
 | `MLNet.AudioInference.Onnx` | ML.NET transforms: classification, embeddings, VAD, raw ONNX ASR/TTS | Microsoft.ML, OnnxRuntime, ML.Tokenizers, MEAI |
 | `MLNet.ASR.OnnxGenAI` | Local Whisper speech-to-text via ORT GenAI | Microsoft.ML, OnnxRuntimeGenAI, MEAI |
+| `MLNet.Audio.DataIngestion` | DataIngestion components: audio document reader, chunker, embedding processor | DataIngestion.Abstractions, MEAI, Audio.Core |
 
 ## Supported Audio Tasks
 
@@ -118,6 +119,32 @@ AudioIO.SaveWav("output.wav", response.Audio);
 
 See [MEAI Integration Guide](docs/meai-integration.md) for DI patterns and middleware.
 
+## DataIngestion Integration
+
+Integrates with [Microsoft.Extensions.DataIngestion](https://www.nuget.org/packages/Microsoft.Extensions.DataIngestion.Abstractions) to prove that DataIngestion is modality-agnostic — not just for text/PDF:
+
+```csharp
+using MLNet.Audio.DataIngestion;
+
+// Layer 3: DataIngestion — Read audio files into documents
+var reader = new AudioDocumentReader(targetSampleRate: 16000);
+var doc = await reader.ReadAsync(stream, "audio.wav", "audio/wav");
+
+// Layer 3: DataIngestion — Chunk into fixed time-windows
+var chunker = new AudioSegmentChunker(segmentDuration: TimeSpan.FromSeconds(2));
+var chunks = chunker.ProcessAsync(doc);
+
+// Layer 3: DataIngestion — Enrich with embeddings via MEAI → ML.NET
+var processor = new AudioEmbeddingChunkProcessor(generator);
+await foreach (var chunk in processor.ProcessAsync(chunks))
+{
+    var embedding = (float[])chunk.Metadata["embedding"];
+    // Use for similarity search, clustering, RAG, etc.
+}
+```
+
+See [Architecture Guide](docs/architecture.md) for the full layered design.
+
 ## Samples
 
 | Sample | Task | Description |
@@ -129,13 +156,16 @@ See [MEAI Integration Guide](docs/meai-integration.md) for DI patterns and middl
 | [`WhisperTranscription`](samples/WhisperTranscription) | STT | Local Whisper via ORT GenAI |
 | [`WhisperRawOnnx`](samples/WhisperRawOnnx) | STT | Full-control Whisper with manual KV cache |
 | [`TextToSpeech`](samples/TextToSpeech) | TTS | SpeechT5 encoder-decoder-vocoder synthesis |
+| [`AudioDataIngestion`](samples/AudioDataIngestion) | DataIngestion | End-to-end Read → Chunk → Embed → Similarity Search |
 
 All samples run without models — they show API patterns and download instructions as graceful fallback.
 
 ## Architecture
 
 ```
-Audio (PCM) → Feature Extraction → ONNX Scoring → Post-processing → Result
+Layer 1 (ML.NET):         Audio (PCM) → Feature Extraction → ONNX Scoring → Post-processing → Result
+Layer 2 (MEAI):           IEmbeddingGenerator<AudioData, Embedding<float>> / ISpeechToTextClient / ITextToSpeechClient
+Layer 3 (DataIngestion):  AudioDocumentReader → AudioSegmentChunker → AudioEmbeddingChunkProcessor
 ```
 
 Three-stage pipeline pattern mirroring the text transform architecture. See [Architecture Guide](docs/architecture.md).
@@ -150,6 +180,8 @@ Three-stage pipeline pattern mirroring the text transform architecture. See [Arc
 |-----------|-----------|
 | `System.Numerics.Tensors` / `TensorPrimitives` | Softmax, normalization, mel features, argmax, temperature sampling |
 | `Microsoft.ML.Tokenizers` (SentencePiece) | SpeechT5 text tokenization |
+| `Microsoft.Extensions.AI` | `IEmbeddingGenerator`, `ISpeechToTextClient`, `ITextToSpeechClient` (prototype) |
+| `Microsoft.Extensions.DataIngestion` | `IngestionDocumentReader`, `IngestionChunker<AudioData>`, `IngestionChunkProcessor<AudioData>` |
 | Custom `WhisperTokenizer` | Whisper BPE + timestamps + language codes |
 | `AudioFeatureExtractor` (abstract) | Audio's equivalent of `Tokenizer` |
 | `AudioData` | Core audio type: float[] samples + sample rate + channels |
@@ -173,6 +205,7 @@ Published to [GitHub Packages](https://github.com/luisquintanilla?tab=packages&r
 - `MLNet.Audio.Core`
 - `MLNet.AudioInference.Onnx`
 - `MLNet.ASR.OnnxGenAI`
+- `MLNet.Audio.DataIngestion`
 
 Add the GitHub Packages source to your `nuget.config`:
 ```xml

@@ -84,7 +84,36 @@ Separate package for Whisper speech-to-text via ONNX Runtime GenAI. ORT GenAI ha
 
 `ITextToSpeechClient` is a prototype following MEAI conventions (`GetAudioAsync`, `GetStreamingAudioAsync`, `Metadata`). When MEAI adds an official TTS interface, this can be replaced.
 
-### Layer 4: Model Packages + Model Garden (future)
+### Layer 4: DataIngestion (`MLNet.Audio.DataIngestion`)
+
+[Microsoft.Extensions.DataIngestion](https://www.nuget.org/packages/Microsoft.Extensions.DataIngestion.Abstractions) integration — proving DataIngestion is modality-agnostic, not just for text/PDF.
+
+**Dependencies:** Microsoft.Extensions.DataIngestion.Abstractions 10.3.0-preview.1, Microsoft.Extensions.AI.Abstractions 10.3.0
+
+**Project reference:** MLNet.Audio.Core
+
+| Type | Base Class | Purpose |
+|------|-----------|---------|
+| `AudioDocumentReader` | `IngestionDocumentReader` | Reads WAV files → `IngestionDocument`. Stores decoded `AudioData` in `section.Metadata["audio"]` |
+| `AudioSegmentChunker` | `IngestionChunker<AudioData>` | Fixed time-window segmentation. Produces `IngestionChunk<AudioData>` with timing metadata |
+| `AudioEmbeddingChunkProcessor` | `IngestionChunkProcessor<AudioData>` | Enriches chunks with embeddings via `IEmbeddingGenerator<AudioData, Embedding<float>>`. Stores `float[]` in `chunk.Metadata["embedding"]` |
+
+**DataIngestion pipeline flow:**
+
+```
+WAV File → AudioDocumentReader    → IngestionDocument (AudioData in section metadata)
+         → AudioSegmentChunker    → IAsyncEnumerable<IngestionChunk<AudioData>> (2s windows)
+         → AudioEmbeddingChunkProcessor → IngestionChunk<AudioData> + embedding in metadata
+```
+
+**Key design decisions:**
+
+- **`IngestionChunk<AudioData>`** — uses the generic content type for type-safe audio flow (not `IngestionChunk<string>`)
+- **Section metadata bridge** — `section.Metadata["audio"]` passes `AudioData` from reader to chunker (IngestionDocument has no generic content property)
+- **MEAI connection** — the processor takes `IEmbeddingGenerator<AudioData, Embedding<float>>` connecting Layer 4 → Layer 3 → Layer 1
+- **All async streaming** — chunker and processor use `IAsyncEnumerable` for memory-efficient processing of large audio files
+
+### Layer 5: Model Packages + Model Garden (future)
 
 NuGet packages wrapping HuggingFace models with auto-download and caching. Compatible with the ModelPackages SDK pattern for model distribution.
 
@@ -270,22 +299,33 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
               ┌────────▼────────┐
               │ MLNet.Audio.Core │  ← Layer 0: Audio primitives
               │  (no ML.NET dep) │
-              └──┬───────────┬──┘
-                 │           │
-    ┌────────────▼──┐   ┌───▼──────────────────────┐
-    │ MLNet.Audio    │   │ MLNet.ASR.OnnxGenAI      │  ← Layer 2
-    │ Inference.Onnx │   │                          │
-    │                │   │ + Microsoft.ML 5.0.0     │
-    │ + Microsoft.ML │   │ + ORT GenAI 0.12.1       │
-    │ + ORT 1.24.2   │   │ + MEAI 10.3.0            │
-    │ + ML.Tokenizers│   └──────────────────────────┘
-    │ + MEAI 10.3.0  │
-    │                │  ← Layer 1: Inference transforms
-    └────────────────┘
+              └──┬──────┬────┬──┘
+                 │      │    │
+    ┌────────────▼──┐   │  ┌─▼────────────────────────┐
+    │ MLNet.Audio    │   │  │ MLNet.ASR.OnnxGenAI      │  ← Layer 2
+    │ Inference.Onnx │   │  │                          │
+    │                │   │  │ + Microsoft.ML 5.0.0     │
+    │ + Microsoft.ML │   │  │ + ORT GenAI 0.12.1       │
+    │ + ORT 1.24.2   │   │  │ + MEAI 10.3.0            │
+    │ + ML.Tokenizers│   │  └──────────────────────────┘
+    │ + MEAI 10.3.0  │   │
+    │                │   │  ← Layer 1: Inference transforms
+    └────────────────┘   │
+                         │
+    ┌────────────────────▼─────────────────────────┐
+    │ MLNet.Audio.DataIngestion                    │  ← Layer 4
+    │                                              │
+    │ + DataIngestion.Abstractions 10.3.0-preview  │
+    │ + MEAI.Abstractions 10.3.0                   │
+    └──────────────────────────────────────────────┘
 
   NOTE: MLNet.ASR.OnnxGenAI depends on MLNet.Audio.Core directly,
         NOT on MLNet.AudioInference.Onnx. This keeps the ORT GenAI
         native dependency isolated.
+
+  NOTE: MLNet.Audio.DataIngestion depends on MLNet.Audio.Core and
+        MEAI.Abstractions only — it does NOT depend on ML.NET or
+        any ONNX runtime. The embedding generator is injected.
 ```
 
 ### Evaluation Strategy
@@ -398,6 +438,11 @@ mlnet-audio-custom-transforms/
 │       ├── OnnxSpeechToTextOptions.cs
 │       └── OnnxSpeechToTextClient.cs          # ISpeechToTextClient implementation
 │
+│   └── MLNet.Audio.DataIngestion/             # Layer 4: DataIngestion
+│       ├── MLNet.Audio.DataIngestion.csproj
+│       └── AudioIngestionComponents.cs        # AudioDocumentReader, AudioSegmentChunker,
+│                                              # AudioEmbeddingChunkProcessor
+│
 └── samples/
     ├── AudioClassification/                   # AST model classification
     ├── AudioEmbeddings/                       # CLAP/Wav2Vec2 embeddings + MEAI
@@ -405,5 +450,6 @@ mlnet-audio-custom-transforms/
     ├── SpeechToText/                          # Provider-agnostic ASR patterns
     ├── WhisperTranscription/                  # ORT GenAI Whisper (simple)
     ├── WhisperRawOnnx/                        # Raw ONNX Whisper (full control)
-    └── TextToSpeech/                          # SpeechT5 local TTS
+    ├── TextToSpeech/                          # SpeechT5 local TTS
+    └── AudioDataIngestion/                    # DataIngestion: Read → Chunk → Embed
 ```

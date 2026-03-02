@@ -640,6 +640,7 @@ Use this checklist when adding a new model or task to the framework:
 - [ ] **Estimator** — Implements `IEstimator<T>`. Validates options, creates transformer.
 - [ ] **MLContext extension** — Add entry point in `MLContextExtensions.cs`
 - [ ] **(Optional) MEAI wrapper** — If task maps to a `Microsoft.Extensions.AI` interface
+- [ ] **(Optional) DataIngestion component** — If task can be used in a Read → Chunk → Process pipeline
 - [ ] **Sample** — Create a working sample in `samples/`
 - [ ] **transforms-guide.md** — Document options, usage, and supported models
 - [ ] **architecture.md** — Update if new architectural patterns are introduced
@@ -656,3 +657,115 @@ src/MLNet.AudioInference.Onnx/
 │   └── MyModelMeaiWrapper.cs       (if applicable)
 └── MLContextExtensions.cs           (add your extension method here)
 ```
+
+---
+
+## Creating DataIngestion Components
+
+The `MLNet.Audio.DataIngestion` package provides `Microsoft.Extensions.DataIngestion` implementations for audio. The DataIngestion pipeline follows three stages: **Reader → Chunker → Processor**.
+
+### Extending the Reader
+
+To support new audio formats (e.g., MP3, FLAC), extend `AudioDocumentReader` or create a new `IngestionDocumentReader`:
+
+```csharp
+public class Mp3DocumentReader : IngestionDocumentReader
+{
+    public override Task<IngestionDocument> ReadAsync(
+        Stream stream, string name, string mediaType, CancellationToken ct = default)
+    {
+        var audio = DecodeMp3(stream); // Your MP3 decoding logic
+        var doc = new IngestionDocument(name);
+        var section = new IngestionDocumentSection($"audio:{name}");
+        section.Text = $"Audio: {name}, {audio.Duration.TotalSeconds:F2}s";
+        section.Metadata["audio"] = audio;
+        doc.Sections.Add(section);
+        return Task.FromResult(doc);
+    }
+}
+```
+
+**Key pattern:** Store the decoded `AudioData` in `section.Metadata["audio"]` — this is how the reader communicates with the chunker. The `IngestionDocument` API doesn't have a generic content property, so metadata is the bridge.
+
+### Extending the Chunker
+
+To implement different chunking strategies (e.g., VAD-based chunking, silence detection, overlap windows):
+
+```csharp
+public class VadBasedChunker : IngestionChunker<AudioData>
+{
+    private readonly IVoiceActivityDetector _vad;
+
+    public VadBasedChunker(IVoiceActivityDetector vad) => _vad = vad;
+
+    public override async IAsyncEnumerable<IngestionChunk<AudioData>> ProcessAsync(
+        IngestionDocument doc, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // Get audio from reader metadata
+        AudioData? audio = null;
+        foreach (var section in doc.Sections)
+            if (section.Metadata.TryGetValue("audio", out var obj) && obj is AudioData a)
+                { audio = a; break; }
+
+        if (audio is null) yield break;
+
+        // Use VAD to find speech segments, yield one chunk per segment
+        using var stream = new MemoryStream();
+        AudioIO.SaveWav(stream, audio);
+        stream.Position = 0;
+
+        await foreach (var segment in _vad.DetectSpeechAsync(stream, cancellationToken: ct))
+        {
+            var start = (int)(segment.Start.TotalSeconds * audio.SampleRate);
+            var end = (int)(segment.End.TotalSeconds * audio.SampleRate);
+            var segmentAudio = new AudioData(audio.Samples[start..end], audio.SampleRate);
+
+            var chunk = new IngestionChunk<AudioData>(segmentAudio, doc, $"speech-{segment.Start}");
+            chunk.Metadata["startTime"] = segment.Start.TotalSeconds.ToString("F2");
+            chunk.Metadata["endTime"] = segment.End.TotalSeconds.ToString("F2");
+            chunk.Metadata["confidence"] = segment.Confidence.ToString("F2");
+            yield return chunk;
+        }
+    }
+}
+```
+
+### Extending the Processor
+
+To add different processing stages (e.g., transcription, classification):
+
+```csharp
+public class AudioTranscriptionChunkProcessor : IngestionChunkProcessor<AudioData>
+{
+    private readonly ISpeechToTextClient _sttClient;
+
+    public AudioTranscriptionChunkProcessor(ISpeechToTextClient sttClient)
+        => _sttClient = sttClient;
+
+    public override async IAsyncEnumerable<IngestionChunk<AudioData>> ProcessAsync(
+        IAsyncEnumerable<IngestionChunk<AudioData>> chunks,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await foreach (var chunk in chunks.WithCancellation(ct))
+        {
+            using var stream = new MemoryStream();
+            AudioIO.SaveWav(stream, chunk.Content);
+            stream.Position = 0;
+
+            var response = await _sttClient.GetTextAsync(stream, cancellationToken: ct);
+            chunk.Metadata["transcription"] = response.Text;
+            yield return chunk;
+        }
+    }
+}
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| `IngestionChunk<AudioData>` (not `IngestionChunk<string>`) | Type-safe: chunk content IS the audio segment, not a text description |
+| `section.Metadata["audio"]` for reader→chunker bridge | `IngestionDocument` has no generic content — metadata is the only extensible storage |
+| `chunk.Metadata["embedding"]` for processor output | Keeps chunks enriched with computed data for downstream consumers |
+| Processor takes `IEmbeddingGenerator` (not concrete type) | Provider-agnostic: any MEAI-compatible embedding source works |
+| All methods return `IAsyncEnumerable` | Memory-efficient streaming for large audio files |

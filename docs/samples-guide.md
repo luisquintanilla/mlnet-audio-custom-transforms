@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project includes 7 runnable samples demonstrating different audio AI tasks. Each sample gracefully handles missing models — showing API patterns and download instructions instead of crashing.
+The project includes 8 runnable samples demonstrating different audio AI tasks. Each sample gracefully handles missing models — showing API patterns and download instructions instead of crashing.
 
 ## Prerequisites
 
@@ -202,6 +202,38 @@ dotnet run
 
 Shows 5 patterns: direct synthesis, `ITextToSpeechClient`, ML.NET pipeline, custom speaker embedding, and voice round-trip.
 
+## AudioDataIngestion
+
+**Location:** `samples/AudioDataIngestion/`
+**Task:** End-to-end DataIngestion pipeline: Read → Chunk → Embed → Similarity Search
+**Model needed:** `laion/clap-htsat-unfused`
+
+### Setup
+
+```bash
+cd samples/AudioDataIngestion
+huggingface-cli download laion/clap-htsat-unfused --include "onnx/*" --local-dir models/clap
+dotnet run
+```
+
+### What it demonstrates
+
+- **Microsoft.Extensions.DataIngestion** integration for audio (proves DataIngestion is modality-agnostic)
+- `AudioDocumentReader` — loads WAV files into `IngestionDocument` with audio metadata
+- `AudioSegmentChunker` — fixed time-window segmentation into `IngestionChunk<AudioData>`
+- `AudioEmbeddingChunkProcessor` — enriches chunks with embeddings via `IEmbeddingGenerator<AudioData, Embedding<float>>`
+- The 3-layer bridge: DataIngestion → MEAI → ML.NET
+- Cosine similarity search across embedded audio segments
+- Generates 4 synthetic audio types: 440Hz tone, 880Hz tone, white noise, chirp
+
+### Without model
+
+Runs a synthetic demo: creates a 4-second test WAV, demonstrates `AudioDocumentReader` loading it into an `IngestionDocument`, and `AudioSegmentChunker` splitting it into 1-second `IngestionChunk<AudioData>` segments. Skips embedding generation (requires model).
+
+### Key takeaway
+
+The same `IngestionDocumentReader → IngestionChunker<T> → IngestionChunkProcessor<T>` pattern that works for text/PDF documents works for audio. `IngestionChunk<AudioData>` keeps the pipeline type-safe with audio content.
+
 ## Running All Samples
 
 ```bash
@@ -218,6 +250,7 @@ dotnet run --project samples/SpeechToText
 dotnet run --project samples/WhisperTranscription
 dotnet run --project samples/WhisperRawOnnx
 dotnet run --project samples/TextToSpeech
+dotnet run --project samples/AudioDataIngestion
 ```
 
 All samples exit with code 0 even without models — they show API patterns as documentation.

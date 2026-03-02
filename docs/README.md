@@ -40,13 +40,15 @@ Want to extend the framework:
 | Speech-to-Text (ORT GenAI) | `OnnxSpeechToText` | `ISpeechToTextClient` | `samples/WhisperTranscription` |
 | Speech-to-Text (Raw ONNX) | `OnnxWhisper` | — | `samples/WhisperRawOnnx` |
 | Text-to-Speech (SpeechT5) | `SpeechT5Tts` | `ITextToSpeechClient` | `samples/TextToSpeech` |
+| Audio DataIngestion | `AudioDocumentReader` / `AudioSegmentChunker` / `AudioEmbeddingChunkProcessor` | `IEmbeddingGenerator` | `samples/AudioDataIngestion` |
 
 ### Project Status
 
 ✅ 7 audio tasks implemented
-✅ 3 source packages (Audio.Core, AudioInference.Onnx, ASR.OnnxGenAI)
-✅ 7 runnable samples
+✅ 4 source packages (Audio.Core, AudioInference.Onnx, ASR.OnnxGenAI, Audio.DataIngestion)
+✅ 8 runnable samples
 ✅ MEAI integration (IEmbeddingGenerator, ISpeechToTextClient, ITextToSpeechClient prototype)
+✅ Microsoft.Extensions.DataIngestion integration (Reader → Chunker → Processor for audio)
 ✅ Microsoft.ML.Tokenizers (SentencePiece for SpeechT5, custom WhisperTokenizer)
 ✅ System.Numerics.Tensors / TensorPrimitives throughout
 📋 Model packaging and model garden integration (planned)
