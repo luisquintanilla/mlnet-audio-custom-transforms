@@ -90,8 +90,25 @@ public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
         var builder = new DataViewSchema.Builder();
         builder.AddColumns(inputSchema);
         builder.AddColumn(_options.OutputColumnName,
-            new VectorDataViewType(NumberDataViewType.Single));
+            new VectorDataViewType(NumberDataViewType.Single),
+            BuildScoreAnnotations());
         return builder.ToSchema();
+    }
+
+    /// <summary>
+    /// Builds column annotations that communicate model dimensions to downstream stages.
+    /// This enables auto-discovery in composed pipelines (e.g., pooler reads HiddenDim via .Append()).
+    /// </summary>
+    private DataViewSchema.Annotations BuildScoreAnnotations()
+    {
+        int hiddenDim = HiddenDim;
+        bool hasPooledOutput = HasPooledOutput;
+        var metaBuilder = new DataViewSchema.Annotations.Builder();
+        metaBuilder.Add<int>("HiddenDim", NumberDataViewType.Int32,
+            (ref int value) => value = hiddenDim);
+        metaBuilder.Add<bool>("HasPooledOutput", BooleanDataViewType.Instance,
+            (ref bool value) => value = hasPooledOutput);
+        return metaBuilder.ToAnnotations();
     }
 
     public IRowToRowMapper GetRowToRowMapper(DataViewSchema inputSchema)
@@ -128,7 +145,8 @@ public sealed class OnnxAudioScorerTransformer : ITransformer, IDisposable
             var builder = new DataViewSchema.Builder();
             builder.AddColumns(input.Schema);
             builder.AddColumn(scorer._options.OutputColumnName,
-                new VectorDataViewType(NumberDataViewType.Single));
+                new VectorDataViewType(NumberDataViewType.Single),
+                scorer.BuildScoreAnnotations());
             Schema = builder.ToSchema();
         }
 

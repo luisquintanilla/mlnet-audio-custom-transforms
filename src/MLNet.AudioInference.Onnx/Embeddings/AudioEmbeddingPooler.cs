@@ -45,7 +45,40 @@ public sealed class AudioEmbeddingPoolerEstimator : IEstimator<AudioEmbeddingPoo
 
     public AudioEmbeddingPoolerTransformer Fit(IDataView input)
     {
-        return new AudioEmbeddingPoolerTransformer(_env, _options);
+        var effectiveOptions = _options;
+
+        // Auto-discover dimensions from scorer column annotations when not explicitly set
+        if (effectiveOptions.HiddenDim <= 0)
+        {
+            var col = input.Schema.GetColumnOrNull(effectiveOptions.InputColumnName);
+            if (col.HasValue)
+            {
+                var annotations = col.Value.Annotations;
+                var hiddenDimCol = annotations.Schema.GetColumnOrNull("HiddenDim");
+                if (hiddenDimCol.HasValue)
+                {
+                    int hiddenDim = 0;
+                    annotations.GetValue("HiddenDim", ref hiddenDim);
+
+                    bool hasPooledOutput = false;
+                    var pooledCol = annotations.Schema.GetColumnOrNull("HasPooledOutput");
+                    if (pooledCol.HasValue)
+                        annotations.GetValue("HasPooledOutput", ref hasPooledOutput);
+
+                    effectiveOptions = new AudioEmbeddingPoolerOptions
+                    {
+                        InputColumnName = _options.InputColumnName,
+                        OutputColumnName = _options.OutputColumnName,
+                        Pooling = _options.Pooling,
+                        Normalize = _options.Normalize,
+                        HiddenDim = hiddenDim,
+                        IsPrePooled = hasPooledOutput
+                    };
+                }
+            }
+        }
+
+        return new AudioEmbeddingPoolerTransformer(_env, effectiveOptions);
     }
 
     public SchemaShape GetOutputSchema(SchemaShape inputSchema)

@@ -85,37 +85,28 @@ for (int i = 0; i < outputRows.Count; i++)
     Console.WriteLine($"    First 5 values: [{string.Join(", ", emb.Take(5).Select(v => v.ToString("F4")))}...]");
 }
 
-// --- Approach 2: Composed Pipeline (individual sub-transforms) ---
-Console.WriteLine("\n=== Composed Pipeline (Sub-Transforms) ===");
+// --- Approach 2: Composed Pipeline (individual sub-transforms with .Append()) ---
+Console.WriteLine("\n=== Composed Pipeline (.Append()) ===");
 
-// Fit each stage sequentially — this is what the facade does internally.
-// Useful when you need to inspect intermediate data or customize stages.
+// Compose individual stages: feature extraction → ONNX scoring → embedding pooling
+// The pooler auto-discovers HiddenDim from scorer column annotations — no manual config needed
+var composedPipeline = new AudioFeatureExtractionEstimator(mlContext,
+        new AudioFeatureExtractionOptions
+        {
+            FeatureExtractor = new MelSpectrogramExtractor(sampleRate: 16000) { NumMelBins = 64, FftSize = 512, HopLength = 160 },
+            SampleRate = 16000
+        })
+    .Append(new OnnxAudioScorerEstimator(mlContext,
+        new OnnxAudioScorerOptions { ModelPath = modelPath }))
+    .Append(new AudioEmbeddingPoolerEstimator(mlContext,
+        new AudioEmbeddingPoolerOptions
+        {
+            Pooling = AudioPoolingStrategy.MeanPooling,
+            Normalize = true
+        }));
 
-// Stage 1: Audio samples → Mel spectrogram features
-var featureTransformer2 = new AudioFeatureExtractionEstimator(mlContext,
-    new AudioFeatureExtractionOptions
-    {
-        FeatureExtractor = new MelSpectrogramExtractor(sampleRate: 16000) { NumMelBins = 64, FftSize = 512, HopLength = 160 },
-        SampleRate = 16000
-    }).Fit(data);
-var featuredData = featureTransformer2.Transform(data);
-
-// Stage 2: Features → ONNX model inference
-var scorerTransformer = new OnnxAudioScorerEstimator(mlContext,
-    new OnnxAudioScorerOptions { ModelPath = modelPath }).Fit(featuredData);
-var scoredData = scorerTransformer.Transform(featuredData);
-
-// Stage 3: Scores → Pooled + normalized embeddings
-// The scorer auto-discovers the model's hidden dimension from ONNX metadata
-var poolerTransformer = new AudioEmbeddingPoolerEstimator(mlContext,
-    new AudioEmbeddingPoolerOptions
-    {
-        Pooling = AudioPoolingStrategy.MeanPooling,
-        Normalize = true,
-        HiddenDim = scorerTransformer.HiddenDim,
-        IsPrePooled = scorerTransformer.HasPooledOutput
-    }).Fit(scoredData);
-var composedOutput = poolerTransformer.Transform(scoredData);
+var composedModel = composedPipeline.Fit(data);
+var composedOutput = composedModel.Transform(data);
 
 var composedRows = mlContext.Data.CreateEnumerable<EmbeddingOutput>(composedOutput, reuseRowObject: false).ToList();
 for (int i = 0; i < composedRows.Count; i++)
