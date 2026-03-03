@@ -76,6 +76,26 @@ public sealed class SentencePieceCharTokenizer : Tokenizer
     }
 
     /// <summary>
+    /// Check whether a SentencePiece .model file is a Char-type model.
+    /// Use this to decide whether to use SentencePieceCharTokenizer or the
+    /// standard SentencePieceTokenizer from Microsoft.ML.Tokenizers.
+    /// </summary>
+    public static bool IsCharModel(string modelPath)
+    {
+        using var stream = File.OpenRead(modelPath);
+        return IsCharModel(stream);
+    }
+
+    /// <summary>
+    /// Check whether a SentencePiece .model stream is a Char-type model.
+    /// </summary>
+    public static bool IsCharModel(Stream modelStream)
+    {
+        var parsed = SentencePieceModelParser.Parse(modelStream);
+        return parsed.Type == SentencePieceModelParser.ModelType.Char;
+    }
+
+    /// <summary>
     /// Normalize text for SentencePiece Char tokenization:
     /// prepend ▁ and replace all spaces with ▁.
     /// </summary>
@@ -130,6 +150,7 @@ public sealed class SentencePieceCharTokenizer : Tokenizer
     {
         idsConsumed = 0;
         charsWritten = 0;
+        bool isFirst = true;
 
         foreach (int id in ids)
         {
@@ -149,6 +170,17 @@ public sealed class SentencePieceCharTokenizer : Tokenizer
 
             // Replace ▁ with space
             var decoded = piece.Replace(SentencePieceSpace, ' ');
+
+            // Trim leading space on first token (mirrors string-based Decode behavior)
+            if (isFirst && decoded.StartsWith(' '))
+            {
+                decoded = decoded[1..];
+                isFirst = false;
+            }
+            else
+            {
+                isFirst = false;
+            }
 
             if (charsWritten + decoded.Length > destination.Length)
                 return OperationStatus.DestinationTooSmall;

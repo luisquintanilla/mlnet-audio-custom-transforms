@@ -461,22 +461,18 @@ public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
     }
 
     /// <summary>
-    /// Load a SentencePiece tokenizer, falling back to SentencePieceCharTokenizer
-    /// if the model uses the Char type (not supported by Microsoft.ML.Tokenizers).
+    /// Load a SentencePiece tokenizer, using SentencePieceCharTokenizer for Char models
+    /// (not supported by Microsoft.ML.Tokenizers) and standard SentencePieceTokenizer otherwise.
     /// </summary>
     private static Tokenizer LoadTokenizer(string path)
     {
-        try
+        if (SentencePieceCharTokenizer.IsCharModel(path))
         {
-            using var stream = File.OpenRead(path);
-            return SentencePieceTokenizer.Create(stream);
-        }
-        catch (ArgumentException ex) when (ex.Message.Contains("Char"))
-        {
-            // SentencePiece Char model (e.g., SpeechT5's spm_char.model)
-            // not supported by Microsoft.ML.Tokenizers — use our custom implementation
             return SentencePieceCharTokenizer.Create(path);
         }
+
+        using var stream = File.OpenRead(path);
+        return SentencePieceTokenizer.Create(stream);
     }
 
     /// <summary>

@@ -18,7 +18,9 @@ namespace MLNet.Audio.Tokenizers;
 ///     Type type = 3;  // NORMAL=1, UNKNOWN=2, CONTROL=3, USER_DEFINED=4, UNUSED=5, BYTE=6
 ///   }
 ///   message TrainerSpec {
-///     ModelType model_type = 1;  // UNIGRAM=1, BPE=2, WORD=3, CHAR=4
+///     repeated string input = 1;
+///     string model_prefix = 2;
+///     ModelType model_type = 3;  // UNIGRAM=1, BPE=2, WORD=3, CHAR=4
 ///   }
 /// </summary>
 internal static class SentencePieceModelParser
@@ -121,8 +123,9 @@ internal static class SentencePieceModelParser
         while ((tag = input.ReadTag()) != 0)
         {
             int fieldNumber = WireFormat.GetTagFieldNumber(tag);
+            var wireType = WireFormat.GetTagWireType(tag);
             // model_type is field 3 in TrainerSpec (field 1 = input, field 2 = model_prefix)
-            if (fieldNumber == 3)
+            if (fieldNumber == 3 && wireType == WireFormat.WireType.Varint)
                 return (ModelType)input.ReadInt32();
             input.SkipLastField();
         }
