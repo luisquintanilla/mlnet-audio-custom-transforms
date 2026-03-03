@@ -62,23 +62,51 @@ public sealed class OnnxAudioScoringTransformer : ITransformer, IDisposable
     /// <summary>
     /// Direct API: score features through ONNX model.
     /// Input is flattened feature array [frames * bins]. Returns raw model output.
+    /// Automatically pads/truncates to match fixed-input models (CLAP, AST).
     /// </summary>
     internal float[] Score(float[] flatFeatures, int frames, int featureDim)
     {
-        var inputShape = _session.InputMetadata[_inputTensorName].Dimensions.ToArray();
-        // Adapt shape: typically [batch, frames, features] or [batch, channels, frames, features]
-        if (inputShape.Length == 3)
-            inputShape = new[] { 1, frames, featureDim };
-        else if (inputShape.Length == 4)
-            inputShape = new[] { 1, 1, frames, featureDim };
+        var modelDims = _session.InputMetadata[_inputTensorName].Dimensions.ToArray();
+
+        // Detect expected frame count from model metadata
+        int expectedFrames = modelDims.Length == 3 && modelDims[1] > 0 ? modelDims[1] :
+                             modelDims.Length == 4 && modelDims[2] > 0 ? modelDims[2] :
+                             -1;
+
+        // Pad or truncate if model expects fixed-size input
+        bool wasTruncated = false;
+        if (expectedFrames > 0 && frames != expectedFrames)
+        {
+            wasTruncated = frames > expectedFrames;
+            var padded = new float[expectedFrames * featureDim];
+            int copyLength = Math.Min(frames, expectedFrames) * featureDim;
+            Array.Copy(flatFeatures, padded, copyLength);
+            flatFeatures = padded;
+            frames = expectedFrames;
+        }
+
+        // Build input shape
+        int[] inputShape;
+        if (modelDims.Length == 3)
+            inputShape = [1, frames, featureDim];
+        else if (modelDims.Length == 4)
+            inputShape = [1, 1, frames, featureDim];
         else
-            inputShape = new[] { 1, flatFeatures.Length };
+            inputShape = [1, flatFeatures.Length];
 
         var tensor = new DenseTensor<float>(flatFeatures, inputShape);
         var inputs = new List<NamedOnnxValue>
         {
             NamedOnnxValue.CreateFromTensor(_inputTensorName, tensor)
         };
+
+        // Handle CLAP's is_longer secondary input (bool tensor indicating truncation)
+        if (_session.InputMetadata.ContainsKey("is_longer"))
+        {
+            var isLongerTensor = new DenseTensor<bool>([1, 1]);
+            isLongerTensor[0, 0] = wasTruncated;
+            inputs.Add(NamedOnnxValue.CreateFromTensor("is_longer", isLongerTensor));
+        }
 
         using var results = _session.Run(inputs);
         var output = results.First(r => r.Name == _outputTensorName);

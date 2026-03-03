@@ -22,6 +22,18 @@ Foundation types for audio processing. Zero ML.NET dependency — pure audio DSP
 | `WhisperTokenizer` | Whisper BPE tokenizer with ~1700 special tokens: language codes (99 languages), task tokens (`<\|transcribe\|>`, `<\|translate\|>`), 1501 timestamp tokens (`<\|0.00\|>` through `<\|30.00\|>` in 0.02s steps). Three decode modes: `Decode()` (clean text), `DecodeWithTimestamps()` (inline annotations), `DecodeToSegments()` (structured `TranscriptionSegment` records) |
 | `AudioCodecTokenizer` | Abstract base for neural audio codecs (EnCodec, DAC, SpeechTokenizer). `Encode(AudioData) → int[][]` (multi-codebook RVQ), `Decode(int[][]) → AudioData`, `EncodeFlat()` for LM-consumable interleaved tokens |
 
+### Layer 0.5: Tokenizer Extensions (`MLNet.Audio.Tokenizers`)
+
+Extends `Microsoft.ML.Tokenizers` with tokenizer implementations for audio/speech models that aren't supported natively.
+
+**Dependencies:** Microsoft.ML.Tokenizers 2.0.0 (Google.Protobuf transitive)
+
+| Type | Purpose |
+|------|---------|
+| `SentencePieceCharTokenizer` | Extends `Tokenizer` base class. SentencePiece Char model support (used by SpeechT5). Parses `.model` protobuf, maps characters to vocabulary IDs. Full `Tokenizer` API: `EncodeToIds()`, `EncodeToTokens()`, `Decode()`, `CountTokens()`. Workaround until `Microsoft.ML.Tokenizers` adds native Char model support. |
+
+**Why a separate package?** `MLNet.Audio.Core` stays dependency-free (no ML.Tokenizers dep). This package bridges audio-specific tokenizer needs with the ML.Tokenizers framework. `WhisperTokenizer` and `AudioCodecTokenizer` stay in Core because they don't benefit from extending the `Tokenizer` base class (WhisperTokenizer is a domain-specific decoder; AudioCodecTokenizer operates on a different modality).
+
 ### Layer 1: Inference Transforms (`MLNet.AudioInference.Onnx`)
 
 ML.NET `IEstimator<T>`/`ITransformer` implementations for all audio tasks.
@@ -294,6 +306,7 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
 │                External NuGet                    │
 │  NWaves 0.9.6                                    │
 │  System.Numerics.Tensors 10.0.3                  │
+│  Microsoft.ML.Tokenizers 2.0.0                   │
 └──────────────────────┬───────────────────────────┘
                        │
               ┌────────▼────────┐
@@ -301,16 +314,23 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
               │  (no ML.NET dep) │
               └──┬──────┬────┬──┘
                  │      │    │
-    ┌────────────▼──┐   │  ┌─▼────────────────────────┐
-    │ MLNet.Audio    │   │  │ MLNet.ASR.OnnxGenAI      │  ← Layer 2
-    │ Inference.Onnx │   │  │                          │
-    │                │   │  │ + Microsoft.ML 5.0.0     │
-    │ + Microsoft.ML │   │  │ + ORT GenAI 0.12.1       │
-    │ + ORT 1.24.2   │   │  │ + MEAI 10.3.0            │
-    │ + ML.Tokenizers│   │  └──────────────────────────┘
-    │ + MEAI 10.3.0  │   │
-    │                │   │  ← Layer 1: Inference transforms
-    └────────────────┘   │
+  ┌──────────────▼──┐   │   │
+  │ MLNet.Audio     │   │   │
+  │ Tokenizers      │   │   │  ← Layer 0.5: ML.Tokenizers extensions
+  │                 │   │   │
+  │ + ML.Tokenizers │   │   │
+  └──────┬──────────┘   │   │
+         │              │   │
+    ┌────▼───────────▼──┐  ┌▼────────────────────────┐
+    │ MLNet.Audio       │  │ MLNet.ASR.OnnxGenAI      │  ← Layer 2
+    │ Inference.Onnx    │  │                          │
+    │                   │  │ + Microsoft.ML 5.0.0     │
+    │ + Microsoft.ML    │  │ + ORT GenAI 0.12.1       │
+    │ + ORT 1.24.2      │  │ + MEAI 10.3.0            │
+    │ + ML.Tokenizers   │  └──────────────────────────┘
+    │ + MEAI 10.3.0     │
+    │                   │  ← Layer 1: Inference transforms
+    └───────────────────┘
                          │
     ┌────────────────────▼─────────────────────────┐
     │ MLNet.Audio.DataIngestion                    │  ← Layer 4
@@ -326,6 +346,10 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
   NOTE: MLNet.Audio.DataIngestion depends on MLNet.Audio.Core and
         MEAI.Abstractions only — it does NOT depend on ML.NET or
         any ONNX runtime. The embedding generator is injected.
+
+  NOTE: MLNet.Audio.Tokenizers extends Microsoft.ML.Tokenizers
+        with audio-specific tokenizer implementations (e.g.,
+        SentencePiece Char model support for SpeechT5).
 ```
 
 ### Evaluation Strategy
@@ -394,6 +418,11 @@ mlnet-audio-custom-transforms/
 │   │   └── Tokenizers/
 │   │       ├── WhisperTokenizer.cs            # BPE tokenizer + timestamps + language codes
 │   │       └── AudioCodecTokenizer.cs         # Abstract base for neural audio codecs
+│   │
+│   ├── MLNet.Audio.Tokenizers/                # Layer 0.5: ML.Tokenizers extensions
+│   │   ├── MLNet.Audio.Tokenizers.csproj
+│   │   ├── SentencePieceCharTokenizer.cs      # Extends Tokenizer for SentencePiece Char models
+│   │   └── SentencePieceModelParser.cs        # Minimal protobuf parser for .model files
 │   │
 │   ├── MLNet.AudioInference.Onnx/             # Layer 1: Inference transforms
 │   │   ├── MLNet.AudioInference.Onnx.csproj

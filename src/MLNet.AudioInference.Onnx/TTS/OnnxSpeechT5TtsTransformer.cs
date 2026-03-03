@@ -5,6 +5,7 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
 using MLNet.Audio.Core;
+using MLNet.Audio.Tokenizers;
 
 namespace MLNet.AudioInference.Onnx;
 
@@ -54,11 +55,10 @@ public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
         _decoderSession = new InferenceSession(options.DecoderModelPath, sessionOptions);
         _vocoderSession = new InferenceSession(options.VocoderModelPath, sessionOptions);
 
-        // Load SentencePiece tokenizer
+        // Load SentencePiece tokenizer (with fallback for Char model type)
         var tokenizerPath = options.TokenizerModelPath
             ?? Path.Combine(Path.GetDirectoryName(options.EncoderModelPath)!, "spm_char.model");
-        using var tokenizerStream = File.OpenRead(tokenizerPath);
-        _tokenizer = SentencePieceTokenizer.Create(tokenizerStream);
+        _tokenizer = LoadTokenizer(tokenizerPath);
 
         // Auto-detect decoder dimensions from model metadata
         (_numLayers, _numHeads, _headDim) = DetectDecoderDimensions(_decoderSession);
@@ -441,6 +441,25 @@ public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
                 return dims[1];
         }
         return 512; // SpeechT5 default x-vector dimension
+    }
+
+    /// <summary>
+    /// Load a SentencePiece tokenizer, falling back to SentencePieceCharTokenizer
+    /// if the model uses the Char type (not supported by Microsoft.ML.Tokenizers).
+    /// </summary>
+    private static Tokenizer LoadTokenizer(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return SentencePieceTokenizer.Create(stream);
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("Char"))
+        {
+            // SentencePiece Char model (e.g., SpeechT5's spm_char.model)
+            // not supported by Microsoft.ML.Tokenizers — use our custom implementation
+            return SentencePieceCharTokenizer.Create(path);
+        }
     }
 
     /// <summary>

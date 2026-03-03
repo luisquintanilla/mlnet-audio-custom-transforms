@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/MLNet.Audio.Core/MLNet.Audio.Core.csproj" />
+    <Project Path="src/MLNet.Audio.Tokenizers/MLNet.Audio.Tokenizers.csproj" />
     <Project Path="src/MLNet.AudioInference.Onnx/MLNet.AudioInference.Onnx.csproj" />
     <Project Path="src/MLNet.ASR.OnnxGenAI/MLNet.ASR.OnnxGenAI.csproj" />
     <Project Path="src/MLNet.Audio.DataIngestion/MLNet.Audio.DataIngestion.csproj" />
