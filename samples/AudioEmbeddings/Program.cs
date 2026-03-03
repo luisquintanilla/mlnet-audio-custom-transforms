@@ -27,7 +27,7 @@ if (!File.Exists(modelPath))
 {
     Console.WriteLine($"Model not found at: {modelPath}");
     Console.WriteLine("Download a CLAP ONNX model from HuggingFace, e.g.:");
-    Console.WriteLine("  huggingface-cli download laion/clap-htsat-unfused --include \"onnx/*\" --local-dir models/clap");
+    Console.WriteLine("  huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap");
     Console.WriteLine("\nRunning with synthetic demo instead...\n");
     RunSyntheticDemo();
     return;

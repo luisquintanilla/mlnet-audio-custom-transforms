@@ -59,7 +59,7 @@ This enables **voice selection** (pick from pre-extracted embeddings) and **voic
 
 ### Tokenization: SentencePiece
 
-SpeechT5 uses a **SentencePiece** character-level tokenizer (`spm_char.model`) to convert input text into token IDs. This project loads it via **Microsoft.ML.Tokenizers**, the same tokenizer library used across ML.NET. The tokenizer handles the full Unicode range and doesn't require any external Python dependencies.
+SpeechT5 uses a **SentencePiece** character-level tokenizer (`spm_char.model`) to convert input text into token IDs. This project loads it via **`SentencePieceCharTokenizer`** from `MLNet.Audio.Tokenizers` (which extends the `Tokenizer` base class from `Microsoft.ML.Tokenizers`). The standard `SentencePieceTokenizer` doesn't support the Char model type, so the library provides this specialized implementation. The tokenizer handles the full Unicode range and doesn't require any external Python dependencies.
 
 ### Stop Condition: Probability Threshold vs. End Token
 
@@ -240,7 +240,7 @@ Key design note: `NumDecoderLayers` and `NumAttentionHeads` are **auto-detected*
 
 ### SentencePiece Tokenization
 
-The transformer loads a SentencePiece model (`spm_char.model`) via **Microsoft.ML.Tokenizers** to convert input text into token IDs:
+The transformer loads a SentencePiece model (`spm_char.model`) via **`SentencePieceCharTokenizer`** from `MLNet.Audio.Tokenizers` to convert input text into token IDs (the standard `SentencePieceTokenizer` from `Microsoft.ML.Tokenizers` does not support the Char model type):
 
 ```
 "Hello!" → SentencePiece → [H, e, l, l, o, !] → [token_id_1, token_id_2, ...]
