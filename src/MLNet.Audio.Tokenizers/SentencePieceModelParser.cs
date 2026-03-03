@@ -121,7 +121,8 @@ internal static class SentencePieceModelParser
         while ((tag = input.ReadTag()) != 0)
         {
             int fieldNumber = WireFormat.GetTagFieldNumber(tag);
-            if (fieldNumber == 1)
+            // model_type is field 3 in TrainerSpec (field 1 = input, field 2 = model_prefix)
+            if (fieldNumber == 3)
                 return (ModelType)input.ReadInt32();
             input.SkipLastField();
         }

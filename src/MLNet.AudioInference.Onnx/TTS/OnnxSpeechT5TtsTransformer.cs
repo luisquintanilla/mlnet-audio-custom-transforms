@@ -163,16 +163,19 @@ public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
         for (int i = 0; i < seqLen; i++)
             idsTensor[0, i] = tokenIds[i];
 
-        // attention_mask: all 1s
-        var maskTensor = new DenseTensor<long>(new[] { 1, seqLen });
-        for (int i = 0; i < seqLen; i++)
-            maskTensor[0, i] = 1;
-
         var inputs = new List<NamedOnnxValue>
         {
-            NamedOnnxValue.CreateFromTensor("input_ids", idsTensor),
-            NamedOnnxValue.CreateFromTensor("attention_mask", maskTensor)
+            NamedOnnxValue.CreateFromTensor("input_ids", idsTensor)
         };
+
+        // Only add attention_mask if the model expects it
+        if (_encoderSession.InputMetadata.ContainsKey("attention_mask"))
+        {
+            var maskTensor = new DenseTensor<long>(new[] { 1, seqLen });
+            for (int i = 0; i < seqLen; i++)
+                maskTensor[0, i] = 1;
+            inputs.Add(NamedOnnxValue.CreateFromTensor("attention_mask", maskTensor));
+        }
 
         using var results = _encoderSession.Run(inputs);
         var hiddenTensor = results.First().AsTensor<float>();
@@ -355,14 +358,28 @@ public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
         int numFrames = melFrames.Count;
         int numMelBins = _options.NumMelBins;
 
-        // Stack mel frames into tensor: [1, num_frames, num_mel_bins]
-        var melTensor = new DenseTensor<float>(new[] { 1, numFrames, numMelBins });
-        for (int f = 0; f < numFrames; f++)
-            for (int m = 0; m < numMelBins; m++)
-                melTensor[0, f, m] = melFrames[f][m];
-
-        // The vocoder input name varies — try common names
+        // Detect expected rank from vocoder model metadata
         var inputName = _vocoderSession.InputMetadata.Keys.First();
+        var expectedRank = _vocoderSession.InputMetadata[inputName].Dimensions.Length;
+
+        DenseTensor<float> melTensor;
+        if (expectedRank == 2)
+        {
+            // [num_frames, num_mel_bins] — NeuML/txtai-speecht5-onnx format
+            melTensor = new DenseTensor<float>(new[] { numFrames, numMelBins });
+            for (int f = 0; f < numFrames; f++)
+                for (int m = 0; m < numMelBins; m++)
+                    melTensor[f, m] = melFrames[f][m];
+        }
+        else
+        {
+            // [1, num_frames, num_mel_bins] — batched format
+            melTensor = new DenseTensor<float>(new[] { 1, numFrames, numMelBins });
+            for (int f = 0; f < numFrames; f++)
+                for (int m = 0; m < numMelBins; m++)
+                    melTensor[0, f, m] = melFrames[f][m];
+        }
+
         var inputs = new List<NamedOnnxValue>
         {
             NamedOnnxValue.CreateFromTensor(inputName, melTensor)
