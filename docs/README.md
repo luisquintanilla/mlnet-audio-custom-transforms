@@ -45,10 +45,10 @@ Want to extend the framework:
 ### Project Status
 
 ✅ 7 audio tasks implemented
-✅ 4 source packages (Audio.Core, AudioInference.Onnx, ASR.OnnxGenAI, Audio.DataIngestion)
+✅ 5 source packages (Audio.Core, Audio.Tokenizers, AudioInference.Onnx, ASR.OnnxGenAI, Audio.DataIngestion)
 ✅ 8 runnable samples
 ✅ MEAI integration (IEmbeddingGenerator, ISpeechToTextClient, ITextToSpeechClient prototype)
 ✅ Microsoft.Extensions.DataIngestion integration (Reader → Chunker → Processor for audio)
-✅ Microsoft.ML.Tokenizers (SentencePiece for SpeechT5, custom WhisperTokenizer)
+✅ Microsoft.ML.Tokenizers (SentencePiece for SpeechT5 via Audio.Tokenizers, custom WhisperTokenizer)
 ✅ System.Numerics.Tensors / TensorPrimitives throughout
 📋 Model packaging and model garden integration (planned)

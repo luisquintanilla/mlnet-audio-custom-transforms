@@ -198,7 +198,7 @@ The Audio Spectrogram Transformer, fine-tuned on AudioSet. Classifies audio into
 **Download:**
 
 ```bash
-huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593 --include "onnx/*" --local-dir models/ast
+huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX --include "onnx/*" --local-dir models/ast
 ```
 
 **Required files:**
@@ -209,7 +209,7 @@ huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593 --in
 
 **Architecture:**
 
-- **Input:** Mel spectrogram with 128 mel bins, variable length
+- **Input:** Mel spectrogram with 128 mel bins. Fixed input: 1024 frames (variable-length audio is automatically padded or truncated by the scoring transformer)
 - **Output:** 527 AudioSet class logits → softmax → probabilities
 - **Feature extraction:** `MelSpectrogramExtractor` with `NumMelBins = 128`
 
@@ -261,18 +261,20 @@ CLAP learns a shared embedding space for audio and text — audio clips and text
 **Download:**
 
 ```bash
-huggingface-cli download laion/clap-htsat-unfused --include "onnx/*" --local-dir models/clap
+huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap
+# Then copy/move model.onnx into onnx/ subdirectory:
+mkdir -p models/clap/onnx && cp models/clap/model.onnx models/clap/onnx/
 ```
 
 **Required files:**
 
 | File | Size | Purpose |
 |------|------|---------|
-| `models/clap/onnx/model.onnx` | ~600 MB | Audio encoder (HTSAT backbone) |
+| `models/clap/onnx/model.onnx` | ~114 MB | Audio encoder (HTSAT backbone) |
 
 **Architecture:**
 
-- **Input:** Mel spectrogram with 80 mel bins (default `MelSpectrogramExtractor` settings work)
+- **Input:** Mel spectrogram with 64 mel bins. Fixed input: 1001 frames (variable-length audio is automatically padded or truncated by the scoring transformer). CLAP's `is_longer` input is automatically set when audio exceeds the model's window.
 - **Output:** 512-dimensional embedding vector
 - **Pooling:** `MeanPooling` (default) works well; `ClsToken` also supported
 - **Normalization:** L2-normalized when `Normalize = true` (recommended for cosine similarity)
@@ -420,7 +422,7 @@ git clone https://huggingface.co/NeuML/txtai-speecht5-onnx models/speecht5
 
 **Architecture:**
 
-- **Tokenizer:** SentencePiece character model (loaded via `Microsoft.ML.Tokenizers`)
+- **Tokenizer:** SentencePiece character model (loaded via `SentencePieceCharTokenizer` from `MLNet.Audio.Tokenizers` — the standard `Microsoft.ML.Tokenizers.SentencePieceTokenizer` does not support the Char model type)
 - **Encoder:** 6 layers, 12 attention heads, 64 head dim, 768 hidden dim
 - **Decoder:** Autoregressive — generates one mel frame per step, uses KV cache (same `WhisperKvCacheManager` pattern as Whisper)
 - **Output:** 80 mel bins per frame, stop probability head determines when to halt
@@ -629,6 +631,10 @@ GPU provides minimal benefit for Silero VAD (already sub-millisecond on CPU) or 
 **"Model input shape mismatch"**
 - Verify `NumMelBins` matches the model. AST expects 128; Whisper tiny/base/small/medium expect 80; Whisper large-v3 expects 128.
 - Make sure the `FeatureExtractor` sample rate matches the audio sample rate (16kHz for all models in this project).
+- For models with fixed-length inputs (AST: 1024 frames, CLAP: 1001 frames), the scoring transformer automatically pads or truncates mel spectrograms to the expected frame count. You do not need to handle this manually.
+
+**"SentencePiece Char model not supported"**
+- The standard `SentencePieceTokenizer` from `Microsoft.ML.Tokenizers` only supports BPE and Unigram model types. SpeechT5 uses a Char model (`spm_char.model`). The `OnnxSpeechT5TtsTransformer` automatically falls back to `SentencePieceCharTokenizer` from `MLNet.Audio.Tokenizers` when this happens.
 
 **"Git LFS pointer files instead of model weights"**
 - Install Git LFS (`git lfs install`) before cloning. If you already cloned, run `git lfs pull` to fetch the actual weights.
@@ -650,8 +656,8 @@ GPU provides minimal benefit for Silero VAD (already sub-millisecond on CPU) or 
 
 | Transform | Model | Download Command | Model Path |
 |-----------|-------|-----------------|------------|
-| Classification | AST AudioSet | `huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593 --include "onnx/*" --local-dir models/ast` | `models/ast/onnx/model.onnx` |
-| Embeddings | CLAP HTSAT | `huggingface-cli download laion/clap-htsat-unfused --include "onnx/*" --local-dir models/clap` | `models/clap/onnx/model.onnx` |
+| Classification | AST AudioSet | `huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX --include "onnx/*" --local-dir models/ast` | `models/ast/onnx/model.onnx` |
+| Embeddings | CLAP HTSAT | `huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap` | `models/clap/onnx/model.onnx` |
 | VAD | Silero VAD | `huggingface-cli download snakers4/silero-vad --include "*.onnx" --local-dir models/silero-vad` | `models/silero-vad/silero_vad.onnx` |
 | STT (Raw ONNX) | Whisper | `optimum-cli export onnx --model openai/whisper-base models/whisper-base/` | `encoder_model.onnx` + `decoder_model_merged.onnx` |
 | TTS | SpeechT5 | `git clone https://huggingface.co/NeuML/txtai-speecht5-onnx models/speecht5` | `encoder_model.onnx` + `decoder_model_merged.onnx` + `decoder_postnet_and_vocoder.onnx` |

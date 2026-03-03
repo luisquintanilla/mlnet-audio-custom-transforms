@@ -464,18 +464,22 @@ The base class `AudioFeatureExtractor.Extract()` handles resampling and mono con
 
 ### Using Microsoft.ML.Tokenizers
 
-For models that use SentencePiece tokenization (like SpeechT5), use the `Microsoft.ML.Tokenizers` package:
+For models that use SentencePiece tokenization (like SpeechT5), use the `Microsoft.ML.Tokenizers` package. Note that the standard `SentencePieceTokenizer` only supports **BPE** and **Unigram** model types. For **Char** models (used by SpeechT5), use `SentencePieceCharTokenizer` from `MLNet.Audio.Tokenizers`:
 
 ```csharp
 using Microsoft.ML.Tokenizers;
+using MLNet.Audio.Tokenizers;
 
-// Load a SentencePiece model
-using var stream = File.OpenRead("spm_char.model");
+// For BPE/Unigram models — use the standard path:
+using var stream = File.OpenRead("spm.model");
 var tokenizer = SentencePieceTokenizer.Create(stream);
-var ids = tokenizer.EncodeToIds(text);
+
+// For Char models (e.g., SpeechT5 spm_char.model) — use the Audio.Tokenizers fallback:
+var charTokenizer = SentencePieceCharTokenizer.Create("spm_char.model");
+var ids = charTokenizer.EncodeToIds(text);
 ```
 
-See `OnnxSpeechT5TtsTransformer` for a production example of this pattern.
+`SentencePieceCharTokenizer` extends the `Tokenizer` base class from `Microsoft.ML.Tokenizers`, so it can be used anywhere a `Tokenizer` is expected. See `OnnxSpeechT5TtsTransformer` for a production example — it tries the standard `SentencePieceTokenizer` first and falls back to `SentencePieceCharTokenizer` for Char model types.
 
 ### Custom Implementation
 

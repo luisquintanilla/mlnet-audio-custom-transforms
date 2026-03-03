@@ -9,6 +9,7 @@ Multi-task audio inference transforms for ML.NET using local ONNX models. Brings
 | Package | Description | Key Dependencies |
 |---------|-------------|-----------------|
 | `MLNet.Audio.Core` | Audio primitives: `AudioData`, WAV I/O, mel spectrogram, `WhisperTokenizer` | NWaves, System.Numerics.Tensors |
+| `MLNet.Audio.Tokenizers` | Text tokenizer extensions for audio models: `SentencePieceCharTokenizer` | Microsoft.ML.Tokenizers |
 | `MLNet.AudioInference.Onnx` | ML.NET transforms: classification, embeddings, VAD, raw ONNX ASR/TTS | Microsoft.ML, OnnxRuntime, ML.Tokenizers, MEAI |
 | `MLNet.ASR.OnnxGenAI` | Local Whisper speech-to-text via ORT GenAI | Microsoft.ML, OnnxRuntimeGenAI, MEAI |
 | `MLNet.Audio.DataIngestion` | DataIngestion components: audio document reader, chunker, embedding processor | DataIngestion.Abstractions, MEAI, Audio.Core |
@@ -179,7 +180,7 @@ Three-stage pipeline pattern mirroring the text transform architecture. See [Arc
 | Primitive | Where Used |
 |-----------|-----------|
 | `System.Numerics.Tensors` / `TensorPrimitives` | Softmax, normalization, mel features, argmax, temperature sampling |
-| `Microsoft.ML.Tokenizers` (SentencePiece) | SpeechT5 text tokenization |
+| `Microsoft.ML.Tokenizers` (SentencePiece) | SpeechT5 text tokenization (with `SentencePieceCharTokenizer` fallback from Audio.Tokenizers for Char models) |
 | `Microsoft.Extensions.AI` | `IEmbeddingGenerator`, `ISpeechToTextClient`, `ITextToSpeechClient` (prototype) |
 | `Microsoft.Extensions.DataIngestion` | `IngestionDocumentReader`, `IngestionChunker<AudioData>`, `IngestionChunkProcessor<AudioData>` |
 | Custom `WhisperTokenizer` | Whisper BPE + timestamps + language codes |
@@ -203,6 +204,7 @@ Open in GitHub Codespaces for a pre-configured environment with .NET 10, Python 
 ### NuGet Packages
 Published to [GitHub Packages](https://github.com/luisquintanilla?tab=packages&repo_name=mlnet-audio-custom-transforms):
 - `MLNet.Audio.Core`
+- `MLNet.Audio.Tokenizers`
 - `MLNet.AudioInference.Onnx`
 - `MLNet.ASR.OnnxGenAI`
 - `MLNet.Audio.DataIngestion`

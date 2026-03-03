@@ -13,13 +13,13 @@ The project includes 8 runnable samples demonstrating different audio AI tasks. 
 
 **Location:** `samples/AudioClassification/`
 **Task:** Classify audio into categories using AST (Audio Spectrogram Transformer)
-**Model needed:** `onnx-community/ast-finetuned-audioset-10-10-0.4593`
+**Model needed:** `onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX`
 
 ### Setup
 
 ```bash
 cd samples/AudioClassification
-huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593 --include "onnx/*" --local-dir models/ast
+huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX --include "onnx/*" --local-dir models/ast
 dotnet run
 ```
 
@@ -40,13 +40,13 @@ Prints download instructions and exits cleanly — no synthetic demo.
 
 **Location:** `samples/AudioEmbeddings/`
 **Task:** Generate vector embeddings from audio using CLAP
-**Model needed:** `laion/clap-htsat-unfused`
+**Model needed:** `lquint/clap-htsat-unfused-onnx`
 
 ### Setup
 
 ```bash
 cd samples/AudioEmbeddings
-huggingface-cli download laion/clap-htsat-unfused --include "onnx/*" --local-dir models/clap
+huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap
 dotnet run
 ```
 
@@ -206,13 +206,13 @@ Shows 5 patterns: direct synthesis, `ITextToSpeechClient`, ML.NET pipeline, cust
 
 **Location:** `samples/AudioDataIngestion/`
 **Task:** End-to-end DataIngestion pipeline: Read → Chunk → Embed → Similarity Search
-**Model needed:** `laion/clap-htsat-unfused`
+**Model needed:** `lquint/clap-htsat-unfused-onnx`
 
 ### Setup
 
 ```bash
 cd samples/AudioDataIngestion
-huggingface-cli download laion/clap-htsat-unfused --include "onnx/*" --local-dir models/clap
+huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap
 dotnet run
 ```
 

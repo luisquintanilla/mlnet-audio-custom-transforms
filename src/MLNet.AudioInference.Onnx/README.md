@@ -241,7 +241,7 @@ mlContext.Transforms.SpeechT5Tts(options)                 // → OnnxSpeechT5Tts
 | Type | Role |
 |---|---|
 | `AudioFeatureExtractionEstimator` / `Transformer` | **Stage 1**: Wraps an `AudioFeatureExtractor` (from Audio.Core) to convert raw PCM audio into mel spectrogram features. Output is a flattened `VBuffer<float>` of shape `[frames × bins]`. |
-| `OnnxAudioScoringEstimator` / `Transformer` | **Stage 2**: Loads an ONNX model, runs inference on feature input, produces raw model output scores. Auto-detects tensor names and output shape. Embeds `HiddenDim` and `HasPooledOutput` as column annotations. Owns the `InferenceSession` lifecycle. |
+| `OnnxAudioScoringEstimator` / `Transformer` | **Stage 2**: Loads an ONNX model, runs inference on feature input, produces raw model output scores. Auto-detects tensor names and output shape. Embeds `HiddenDim` and `HasPooledOutput` as column annotations. For fixed-input models (CLAP, AST), automatically pads or truncates mel spectrograms to the expected frame count. Handles CLAP's `is_longer` secondary input. Owns the `InferenceSession` lifecycle. |
 | `EnCodecTokenizer` | Neural audio codec tokenizer (Meta EnCodec). Converts audio ↔ discrete codes via Residual Vector Quantization. Extends `AudioCodecTokenizer` from Audio.Core. Prototypes what could become a first-class audio tokenizer in `Microsoft.ML.Tokenizers`. |
 
 ### Classification/
@@ -291,7 +291,7 @@ mlContext.Transforms.SpeechT5Tts(options)                 // → OnnxSpeechT5Tts
 | Type | Role |
 |---|---|
 | `OnnxSpeechT5TtsEstimator` | Creates `OnnxSpeechT5TtsTransformer`. |
-| `OnnxSpeechT5TtsTransformer` | Full SpeechT5 pipeline: (1) SentencePiece tokenizer (`Microsoft.ML.Tokenizers`) → token IDs, (2) encoder → hidden states, (3) autoregressive decoder loop with KV cache → mel frames, (4) vocoder (postnet + HiFi-GAN) → PCM waveform. Loads `.npy` speaker embeddings. Auto-detects decoder dimensions. |
+| `OnnxSpeechT5TtsTransformer` | Full SpeechT5 pipeline: (1) SentencePiece tokenizer → token IDs (uses `SentencePieceCharTokenizer` from `MLNet.Audio.Tokenizers` as fallback when `Microsoft.ML.Tokenizers` doesn't support the Char model type), (2) encoder → hidden states, (3) autoregressive decoder loop with KV cache → mel frames, (4) vocoder (postnet + HiFi-GAN) → PCM waveform. Loads `.npy` speaker embeddings. Auto-detects decoder dimensions. |
 | `OnnxSpeechT5Options` | Config: `EncoderModelPath`, `DecoderModelPath`, `VocoderModelPath`, `TokenizerModelPath` (SentencePiece), `SpeakerEmbeddingPath` (.npy), `MaxMelFrames`, `StopThreshold`, `NumMelBins`. |
 | `ITextToSpeechClient` | Prototype MEAI-style interface: `GetAudioAsync()`, `GetStreamingAudioAsync()`, `Metadata`. Follows MEAI conventions (async, options, streaming via `IAsyncEnumerable`). |
 | `OnnxTextToSpeechClient` | `ITextToSpeechClient` implementation wrapping `OnnxSpeechT5TtsTransformer`. Single-chunk streaming (full synthesis then yield). |
@@ -331,6 +331,9 @@ The MEAI pattern enables **provider-agnostic code**. For example, `SpeechToTextC
 │  MLNet.AudioInference.Onnx (Layer 1)  ◄── YOU ARE HERE
 │  IEstimator/ITransformer + MEAI wrappers    │
 ├─────────────────────────────────────────────┤
+│  MLNet.Audio.Tokenizers (Layer 0.5)         │  ← ML.Tokenizers extensions
+│  SentencePieceCharTokenizer                 │    (SpeechT5 Char model support)
+├─────────────────────────────────────────────┤
 │  MLNet.Audio.Core (Layer 0)                 │  ← audio primitives, feature extractors
 │  AudioData, AudioFeatureExtractor,          │
 │  WhisperFeatureExtractor, WhisperTokenizer, │
@@ -338,7 +341,9 @@ The MEAI pattern enables **provider-agnostic code**. For example, `SpeechToTextC
 └─────────────────────────────────────────────┘
 ```
 
-**Depends on:** `MLNet.Audio.Core` (audio primitives: `AudioData`, `AudioFeatureExtractor`, `WhisperFeatureExtractor`, `WhisperTokenizer`, `AudioCodecTokenizer`, `AudioIO`)
+**Depends on:**
+- `MLNet.Audio.Core` (audio primitives: `AudioData`, `AudioFeatureExtractor`, `WhisperFeatureExtractor`, `WhisperTokenizer`, `AudioCodecTokenizer`, `AudioIO`)
+- `MLNet.Audio.Tokenizers` (text tokenizer extensions: `SentencePieceCharTokenizer` for SpeechT5 Char model support)
 
 **Consumed by:**
 - Sample projects (direct use of estimators/transformers)
@@ -352,10 +357,11 @@ The MEAI pattern enables **provider-agnostic code**. For example, `SpeechToTextC
 |---|---|---|
 | `Microsoft.ML` | 5.0.0 | `IEstimator<T>`, `ITransformer`, `IDataView`, `DataViewSchema`, `SchemaShape`, `MLContext`, `VBuffer<T>` — the entire ML.NET pipeline infrastructure |
 | `Microsoft.ML.OnnxRuntime.Managed` | 1.24.2 | `InferenceSession`, `OrtValue`, `DenseTensor<T>`, `NamedOnnxValue` — all ONNX model inference. Used by every transform except `SpeechToTextClientTransformer` (which delegates to the MEAI client) |
-| `Microsoft.ML.Tokenizers` | 2.0.0 | `SentencePieceTokenizer` — used by `OnnxSpeechT5TtsTransformer` for character-level text tokenization (`spm_char.model`). Only TTS depends on this. |
+| `Microsoft.ML.Tokenizers` | 2.0.0 | `SentencePieceTokenizer` — used by `OnnxSpeechT5TtsTransformer` for text tokenization. Falls back to `SentencePieceCharTokenizer` (from Audio.Tokenizers) for Char model types. Only TTS depends on this. |
 | `Microsoft.Extensions.AI.Abstractions` | 10.3.0 | `IEmbeddingGenerator<,>`, `ISpeechToTextClient`, `EmbeddingGeneratorMetadata`, `SpeechToTextOptions` — the MEAI abstraction interfaces. `MEAI001` warning is suppressed (experimental API). |
 | `System.Numerics.Tensors` | 10.0.3 | `TensorPrimitives` — used throughout for vectorized math: `SoftMax`, `IndexOfMax`, `Norm`, `Divide`, `Add`, `Max`, `MaxMagnitude`. Avoids hand-written loops for these operations. |
 | `MLNet.Audio.Core` | (project ref) | Audio primitives: `AudioData`, `AudioFeatureExtractor`, `MelSpectrogramExtractor`, `WhisperFeatureExtractor`, `WhisperTokenizer`, `AudioCodecTokenizer`, `AudioIO` |
+| `MLNet.Audio.Tokenizers` | (project ref) | Text tokenizer extensions for audio models: `SentencePieceCharTokenizer` for SpeechT5 Char model support |
 
 ---
 
