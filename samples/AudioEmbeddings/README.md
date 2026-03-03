@@ -152,7 +152,7 @@ Download a CLAP ONNX model from HuggingFace:
 
 ```bash
 pip install huggingface-hub
-huggingface-cli download laion/clap-htsat-unfused --include "onnx/*" --local-dir models/clap
+huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap
 ```
 
 Place the model so it's accessible at `models/clap/onnx/model.onnx` relative to the working directory (or pass a custom path as the first argument).

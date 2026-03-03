@@ -11,7 +11,7 @@ using MLNet.AudioInference.Onnx;
 //
 // Before running:
 // 1. Download an AST ONNX model from HuggingFace:
-//    huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593 --include "onnx/*" --local-dir models/ast
+//    huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX --include "onnx/*" --local-dir models/ast
 //    (or export one yourself with optimum-cli)
 //
 // 2. Place a test WAV file (16kHz mono preferred) in the sample directory.
@@ -24,7 +24,7 @@ if (!File.Exists(modelPath))
 {
     Console.WriteLine($"Model not found at: {modelPath}");
     Console.WriteLine("Download an AST ONNX model from HuggingFace:");
-    Console.WriteLine("  huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593 --include \"onnx/*\" --local-dir models/ast");
+    Console.WriteLine("  huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX --include \"onnx/*\" --local-dir models/ast");
     return;
 }
 

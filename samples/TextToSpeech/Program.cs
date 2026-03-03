@@ -7,7 +7,7 @@ using MLNet.AudioInference.Onnx;
 // ============================================================================
 //
 // This sample uses OnnxSpeechT5TtsTransformer which manages the FULL TTS pipeline:
-//   1. Microsoft.ML.Tokenizers (SentencePiece) → token IDs
+//   1. SentencePieceCharTokenizer (MLNet.Audio.Tokenizers) → token IDs
 //   2. Encoder ONNX session → hidden states
 //   3. Decoder loop with KV cache → mel spectrogram frames
 //   4. Vocoder ONNX session (postnet + HiFi-GAN) → PCM waveform

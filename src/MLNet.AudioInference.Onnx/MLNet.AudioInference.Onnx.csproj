@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MLNet.Audio.Core\MLNet.Audio.Core.csproj" />
+    <ProjectReference Include="..\MLNet.Audio.Tokenizers\MLNet.Audio.Tokenizers.csproj" />
   </ItemGroup>
 
   <ItemGroup>

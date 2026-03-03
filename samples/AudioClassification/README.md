@@ -61,7 +61,7 @@ Raw Audio (PCM waveform)
 
 The AST architecture (Gong et al., 2021) repurposes the Vision Transformer for audio. Instead of image patches, it operates on spectrogram patches — fixed-size windows of the mel spectrogram. This lets it leverage pre-trained image weights and capture long-range temporal dependencies via self-attention, outperforming CNN-based approaches on benchmarks like AudioSet.
 
-The sample defaults to `ast-finetuned-audioset-10-10-0.4593` from HuggingFace, fine-tuned on AudioSet's 527-class ontology. You define a subset of labels in your code (see below).
+The sample defaults to `ast-finetuned-audioset-10-10-0.4593-ONNX` from HuggingFace, fine-tuned on AudioSet's 527-class ontology. You define a subset of labels in your code (see below).
 
 ---
 
@@ -128,7 +128,7 @@ This sample targets `net10.0`. Install from [dotnet.microsoft.com](https://dotne
 Download an AST model from HuggingFace (requires `huggingface-cli` — install via `pip install huggingface_hub`):
 
 ```bash
-huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593 --include "onnx/*" --local-dir models/ast
+huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX --include "onnx/*" --local-dir models/ast
 ```
 
 This places the ONNX model at `models/ast/onnx/model.onnx`.

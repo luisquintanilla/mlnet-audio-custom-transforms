@@ -749,7 +749,7 @@ Any Whisper model exported to ONNX with Optimum (`optimum-cli export onnx`):
 
 ### What It Does
 
-Generates speech audio from text using Microsoft's **SpeechT5** model. The pipeline tokenizes text with SentencePiece, encodes it, autoregressively generates mel spectrogram frames, and converts them to a waveform using a HiFi-GAN vocoder. Supports speaker customization via x-vector embeddings.
+Generates speech audio from text using Microsoft's **SpeechT5** model. The pipeline tokenizes text with SentencePiece (using `SentencePieceCharTokenizer` from `MLNet.Audio.Tokenizers` for Char model types), encodes it, autoregressively generates mel spectrogram frames, and converts them to a waveform using a HiFi-GAN vocoder. Supports speaker customization via x-vector embeddings.
 
 ### When To Use It
 

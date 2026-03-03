@@ -143,7 +143,7 @@ After all chunks are embedded, the sample uses the first chunk as a query and ra
 
 ```bash
 pip install huggingface-hub
-huggingface-cli download laion/clap-htsat-unfused --include "onnx/*" --local-dir models/clap
+huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap
 ```
 
 The model file should end up at `models/clap/onnx/model.onnx` (relative to where you run the sample).
