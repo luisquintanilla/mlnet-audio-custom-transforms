@@ -45,7 +45,10 @@ public sealed class SpeechToTextClientTransformer : ITransformer, IDisposable
             AudioIO.SaveWav(stream, audio);
             stream.Position = 0;
 
-            var sttOptions = new SpeechToTextOptions();
+            var sttOptions = new SpeechToTextOptions
+            {
+                SpeechSampleRate = _options.SampleRate,
+            };
             if (_options.SpeechLanguage is not null)
                 sttOptions.SpeechLanguage = _options.SpeechLanguage;
             if (_options.TextLanguage is not null)
