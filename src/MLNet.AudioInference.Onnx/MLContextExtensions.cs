@@ -68,6 +68,20 @@ public static class MLContextExtensions
     }
 
     /// <summary>
+    /// Creates a raw ONNX Whisper speech-to-text estimator wrapped as an ISpeechToTextClient.
+    /// Combines the full-control raw ONNX pipeline with MEAI ecosystem support
+    /// (DI, middleware, logging, telemetry via SpeechToTextClientBuilder).
+    /// </summary>
+    public static SpeechToTextClientEstimator OnnxWhisperSpeechToText(
+        this TransformsCatalog catalog,
+        OnnxWhisperOptions options)
+    {
+        var mlContext = GetMLContext(catalog);
+        ISpeechToTextClient client = new OnnxWhisperSpeechToTextClient(mlContext, options);
+        return new SpeechToTextClientEstimator(mlContext, client);
+    }
+
+    /// <summary>
     /// Creates a SpeechT5 text-to-speech estimator using raw ONNX Runtime.
     /// Uses HuggingFace optimum-exported ONNX models (NeuML/txtai-speecht5-onnx format).
     /// Full encoder-decoder-vocoder pipeline: text → mel spectrogram → waveform.

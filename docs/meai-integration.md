@@ -12,7 +12,7 @@ This project integrates with [Microsoft.Extensions.AI](https://learn.microsoft.c
 |-----------|---------|------------|
 | `IChatClient` | Text generation | No |
 | `IEmbeddingGenerator<TInput, TEmbedding>` | Embeddings | Yes — `IEmbeddingGenerator<AudioData, Embedding<float>>` |
-| `ISpeechToTextClient` | Speech-to-text (experimental) | Yes |
+| `ISpeechToTextClient` | Speech-to-text (experimental) | Yes — 3 implementations |
 | `IImageGenerator` | Image generation (experimental) | No |
 
 ### Prototyped in This Project (Not in MEAI)
@@ -67,11 +67,13 @@ builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(
 });
 ```
 
-## Speech-to-Text Client
+## Speech-to-Text Clients
 
-`OnnxSpeechToTextClient : ISpeechToTextClient` (in the `MLNet.ASR.OnnxGenAI` package)
+Three `ISpeechToTextClient` implementations — all pluggable into MEAI middleware and DI:
 
-Implements the standard MEAI `ISpeechToTextClient` interface for local Whisper inference.
+### 1. ORT GenAI Whisper (`MLNet.ASR.OnnxGenAI`)
+
+`OnnxSpeechToTextClient : ISpeechToTextClient` — easiest local Whisper option.
 
 ```csharp
 using Microsoft.Extensions.AI;
@@ -86,14 +88,253 @@ ISpeechToTextClient client = new OnnxSpeechToTextClient(new OnnxSpeechToTextOpti
 using var stream = File.OpenRead("speech.wav");
 var response = await client.GetTextAsync(stream);
 Console.WriteLine(response.Text);
+Console.WriteLine($"Time: {response.StartTime} → {response.EndTime}");
+Console.WriteLine($"Model: {response.ModelId}");
 ```
 
-Because the transform accepts any `ISpeechToTextClient`, you can swap providers without changing pipeline code:
+### 2. Raw ONNX Whisper (`MLNet.AudioInference.Onnx`)
+
+`OnnxWhisperSpeechToTextClient : ISpeechToTextClient` — full control, no ORT GenAI dependency. Uses standard HuggingFace optimum-exported ONNX models with manual encoder-decoder-KV cache management.
+
+```csharp
+using Microsoft.Extensions.AI;
+using MLNet.AudioInference.Onnx;
+
+ISpeechToTextClient client = new OnnxWhisperSpeechToTextClient(new OnnxWhisperOptions
+{
+    EncoderModelPath = "models/whisper-base/encoder_model.onnx",
+    DecoderModelPath = "models/whisper-base/decoder_model_merged.onnx",
+    Language = "en"
+});
+
+using var stream = File.OpenRead("speech.wav");
+var response = await client.GetTextAsync(stream);
+Console.WriteLine(response.Text);
+
+// Streaming with per-segment timestamps
+stream.Position = 0; // Rewind before reusing the stream
+await foreach (var update in client.GetStreamingTextAsync(stream))
+{
+    switch (update.Kind)
+    {
+        case var k when k == SpeechToTextResponseUpdateKind.SessionOpen:
+            Console.WriteLine("Session started");
+            break;
+        case var k when k == SpeechToTextResponseUpdateKind.TextUpdated:
+            Console.WriteLine($"[{update.StartTime} → {update.EndTime}] {update.Text}");
+            break;
+        case var k when k == SpeechToTextResponseUpdateKind.SessionClose:
+            Console.WriteLine("Session ended");
+            break;
+    }
+}
+```
+
+### 3. Provider-Agnostic Wrapper (ML.NET Pipeline)
+
+`SpeechToTextClientTransformer` — wraps **any** `ISpeechToTextClient` as an ML.NET pipeline step.
 
 ```csharp
 // Works with ANY ISpeechToTextClient — Azure, OpenAI, local
 ISpeechToTextClient client = /* any provider */;
 var pipeline = mlContext.Transforms.SpeechToText(client);
+
+// Or use the raw ONNX Whisper via ISpeechToTextClient in the ML.NET pipeline:
+var pipeline = mlContext.Transforms.OnnxWhisperSpeechToText(whisperOptions);
+```
+
+### Choosing the Right Client
+
+| Client | When to Use |
+|--------|-------------|
+| `OnnxSpeechToTextClient` | Easiest local Whisper (ORT GenAI handles decode) |
+| `OnnxWhisperSpeechToTextClient` | Full control, no ORT GenAI dep, manual KV cache |
+| Any `ISpeechToTextClient` via `SpeechToText()` | Cloud providers (Azure, OpenAI), custom implementations |
+
+## SpeechToTextClientBuilder — Middleware Pipeline
+
+MEAI provides `SpeechToTextClientBuilder` for composing middleware around any `ISpeechToTextClient`, just like `ChatClientBuilder` for chat:
+
+```csharp
+using Microsoft.Extensions.AI;
+using MLNet.AudioInference.Onnx;
+
+// Create a client with logging and telemetry middleware
+ISpeechToTextClient client = new OnnxWhisperSpeechToTextClient(whisperOptions)
+    .AsBuilder()
+    .UseLogging()           // Log invocations and results
+    .UseOpenTelemetry()     // OTel tracing spans
+    .ConfigureOptions(opts =>
+    {
+        // Set default language for all requests
+        opts.SpeechLanguage ??= "en";
+    })
+    .Build();
+
+var response = await client.GetTextAsync(audioStream);
+// → Logged, traced, with default language applied
+```
+
+Available middleware (from `Microsoft.Extensions.AI`):
+
+| Middleware | Extension Method | What It Does |
+|-----------|-----------------|-------------|
+| Logging | `.UseLogging()` | Logs invocations at Info, responses at Debug, sensitive data at Trace |
+| OpenTelemetry | `.UseOpenTelemetry()` | Emits spans following OTel GenAI Semantic Conventions |
+| ConfigureOptions | `.ConfigureOptions(callback)` | Mutates `SpeechToTextOptions` on each request |
+| Custom | `.Use(inner => new MyClient(inner))` | Any custom `DelegatingSpeechToTextClient` |
+
+## Dependency Injection Patterns
+
+### Using `AddSpeechToTextClient()` (Recommended)
+
+MEAI provides builder-based DI registration that supports middleware pipelines:
+
+```csharp
+// In Program.cs — registers ISpeechToTextClient with middleware
+builder.Services.AddSpeechToTextClient(
+    new OnnxSpeechToTextClient(sttOptions))
+    .UseLogging()
+    .UseOpenTelemetry();
+
+// Or with a factory for deferred construction
+builder.Services.AddSpeechToTextClient(sp =>
+    new OnnxWhisperSpeechToTextClient(whisperOptions))
+    .UseLogging();
+
+// Keyed registration for multiple providers
+builder.Services.AddKeyedSpeechToTextClient("local",
+    new OnnxSpeechToTextClient(sttOptions));
+builder.Services.AddKeyedSpeechToTextClient("cloud",
+    azureSpeechClient);
+```
+
+### Full Audio AI Service Registration
+
+```csharp
+// Register all audio AI services
+builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(sp =>
+{
+    var mlContext = new MLContext();
+    var estimator = mlContext.Transforms.OnnxAudioEmbedding(embeddingOptions);
+    var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
+    return new OnnxAudioEmbeddingGenerator(transformer);
+});
+
+builder.Services.AddSpeechToTextClient(
+    new OnnxSpeechToTextClient(sttOptions))
+    .UseLogging()
+    .UseOpenTelemetry();
+
+builder.Services.AddSingleton<ITextToSpeechClient>(
+    new OnnxTextToSpeechClient(ttsOptions));
+```
+
+Then inject wherever needed:
+
+```csharp
+public class TranscriptionService(ISpeechToTextClient sttClient)
+{
+    public async Task<string> TranscribeAsync(Stream audio)
+    {
+        var response = await sttClient.GetTextAsync(audio);
+        return response.Text;
+    }
+}
+```
+
+## SpeechToTextOptions & Response Richness
+
+### Options Passed to Providers
+
+The MEAI `SpeechToTextOptions` type carries language, sample rate, and model information. Our clients honor some fields at request time and others at construction time:
+
+```csharp
+var options = new SpeechToTextOptions
+{
+    SpeechLanguage = "es",           // Set at construction time via options class (not per-request)
+    TextLanguage = "en",             // Set at construction time via options class (not per-request)
+    SpeechSampleRate = 16000,        // ✅ Honored at request time — auto-resamples audio
+    ModelId = "whisper-large-v3",    // ✅ Honored at request time — used in response metadata
+};
+
+var response = await client.GetTextAsync(audioStream, options);
+```
+
+> **Note:** `SpeechLanguage` and `TextLanguage` are configured when creating the client via
+> `OnnxWhisperOptions.Language` / `OnnxSpeechToTextOptions.Language` and `Translate`. These fields
+> on `SpeechToTextOptions` are not consumed at request time by the current local clients.
+> Cloud providers (Azure, OpenAI) may honor them per-request.
+
+### Rich Response Metadata
+
+Our clients populate the full `SpeechToTextResponse` with timestamps and metadata:
+
+```csharp
+var response = await client.GetTextAsync(audioStream);
+
+Console.WriteLine(response.Text);                    // Full transcription
+Console.WriteLine(response.StartTime);               // First segment start
+Console.WriteLine(response.EndTime);                  // Last segment end
+Console.WriteLine(response.ModelId);                  // "whisper-base"
+
+// Segment-level timestamps in AdditionalProperties
+var segments = response.AdditionalProperties?["segments"];
+var language = response.AdditionalProperties?["language"];
+```
+
+### GetTextAsync with DataContent
+
+MEAI provides a convenience overload accepting `DataContent` (in-memory audio bytes):
+
+```csharp
+var audioContent = new DataContent(audioBytes, "audio/wav");
+var response = await client.GetTextAsync(audioContent);
+```
+
+## Streaming with Update Kinds
+
+Our `ISpeechToTextClient` implementations use the full MEAI streaming lifecycle:
+
+```csharp
+await foreach (var update in client.GetStreamingTextAsync(audioStream))
+{
+    Console.WriteLine($"Kind: {update.Kind}");
+
+    if (update.Kind == SpeechToTextResponseUpdateKind.SessionOpen)
+        Console.WriteLine("▶ Transcription started");
+
+    if (update.Kind == SpeechToTextResponseUpdateKind.TextUpdated)
+        Console.WriteLine($"  [{update.StartTime} → {update.EndTime}] {update.Text}");
+
+    if (update.Kind == SpeechToTextResponseUpdateKind.SessionClose)
+        Console.WriteLine("■ Transcription complete");
+}
+
+// Or collect all updates into a single response:
+var response = await client.GetStreamingTextAsync(audioStream)
+    .ToSpeechToTextResponseAsync();
+Console.WriteLine(response.Text);
+```
+
+### Update Kind Lifecycle
+
+| Kind | When Emitted |
+|------|-------------|
+| `SessionOpen` | Start of transcription session |
+| `TextUpdating` | Intermediate result (partial, may change) |
+| `TextUpdated` | Final segment result (per Whisper timestamp segment) |
+| `SessionClose` | End of transcription session |
+| `Error` | Non-blocking error during transcription |
+
+## Metadata via GetService
+
+Both clients support `GetService` for metadata retrieval:
+
+```csharp
+var metadata = client.GetService<SpeechToTextClientMetadata>();
+Console.WriteLine(metadata?.ProviderName);    // "OnnxGenAI-Whisper" or "OnnxWhisper-RawOnnx"
+Console.WriteLine(metadata?.DefaultModelId);  // "whisper-base"
 ```
 
 ## Text-to-Speech Client (Prototype)
@@ -118,30 +359,6 @@ public interface ITextToSpeechClient : IDisposable
         string text,
         TextToSpeechOptions? options = null,
         CancellationToken cancellationToken = default);
-}
-```
-
-### Response Types
-
-```csharp
-public class TextToSpeechResponse
-{
-    public AudioData Audio { get; init; }
-    public string? Voice { get; init; }
-}
-
-public class TextToSpeechResponseUpdate
-{
-    public AudioData Audio { get; init; }
-    public bool IsFinal { get; init; }
-}
-
-public class TextToSpeechOptions
-{
-    public string? Voice;
-    public float Speed = 1.0f;
-    public string? Language;
-    public float[]? SpeakerEmbedding;
 }
 ```
 
@@ -176,59 +393,6 @@ public interface IVoiceActivityDetector
 }
 
 public record SpeechSegment(TimeSpan Start, TimeSpan End, float Confidence);
-```
-
-## Dependency Injection Patterns
-
-Register all audio AI services in a typical ASP.NET Core app:
-
-```csharp
-// In Program.cs
-builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(sp =>
-{
-    var mlContext = new MLContext();
-    var estimator = mlContext.Transforms.OnnxAudioEmbedding(embeddingOptions);
-    var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
-    return new OnnxAudioEmbeddingGenerator(transformer);
-});
-
-builder.Services.AddSingleton<ISpeechToTextClient>(
-    new OnnxSpeechToTextClient(sttOptions));
-
-builder.Services.AddSingleton<ITextToSpeechClient>(
-    new OnnxTextToSpeechClient(ttsOptions));
-
-builder.Services.AddSingleton<IVoiceActivityDetector>(
-    new OnnxVadTransformer(mlContext, vadOptions));
-```
-
-Then inject wherever needed:
-
-```csharp
-public class TranscriptionService(ISpeechToTextClient sttClient)
-{
-    public async Task<string> TranscribeAsync(Stream audio)
-    {
-        var response = await sttClient.GetTextAsync(audio);
-        return response.Text;
-    }
-}
-```
-
-## Middleware / Decorator Pattern
-
-MEAI supports middleware wrapping (caching, logging, etc.) via the builder pattern. This works with our audio embedding generator out of the box:
-
-```csharp
-// Logging decorator for audio embeddings
-var mlContext = new MLContext();
-var estimator = mlContext.Transforms.OnnxAudioEmbedding(options);
-var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<AudioInput>()));
-
-var generator = new OnnxAudioEmbeddingGenerator(transformer)
-    .AsBuilder()
-    .UseLogging()
-    .Build();
 ```
 
 ## What's Missing in MEAI for Audio

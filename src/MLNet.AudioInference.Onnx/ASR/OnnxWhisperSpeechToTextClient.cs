@@ -1,38 +1,54 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
+using Microsoft.ML;
 using MLNet.Audio.Core;
 
-namespace MLNet.ASR.OnnxGenAI;
+namespace MLNet.AudioInference.Onnx;
 
 /// <summary>
-/// Local ISpeechToTextClient backed by Whisper via ORT GenAI.
-/// Plugs into the MEAI ecosystem — usable via DI, middleware
+/// ISpeechToTextClient implementation wrapping OnnxWhisperTransformer (raw ONNX, no ORT GenAI).
+/// Brings the raw ONNX Whisper path into the MEAI ecosystem — usable via DI, middleware
 /// (logging, telemetry), and the SpeechToTextClientBuilder pipeline.
+///
+/// Contrast with:
+///   - OnnxSpeechToTextClient (MLNet.ASR.OnnxGenAI): Whisper via ORT GenAI
+///   - SpeechToTextClientTransformer: wraps any ISpeechToTextClient in ML.NET
 /// </summary>
-public sealed class OnnxSpeechToTextClient : ISpeechToTextClient
+public sealed class OnnxWhisperSpeechToTextClient : ISpeechToTextClient
 {
-    private readonly OnnxSpeechToTextTransformer _transformer;
-    private readonly OnnxSpeechToTextOptions _options;
+    private readonly OnnxWhisperTransformer _transformer;
+    private readonly OnnxWhisperOptions _options;
 
-    public OnnxSpeechToTextClient(OnnxSpeechToTextOptions options)
+    /// <summary>
+    /// Creates a new client with a shared MLContext (preferred when used from ML.NET pipelines).
+    /// </summary>
+    public OnnxWhisperSpeechToTextClient(MLContext mlContext, OnnxWhisperOptions options)
     {
-        _options = options;
-        _transformer = new OnnxSpeechToTextTransformer(new Microsoft.ML.MLContext(), options);
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _transformer = new OnnxWhisperTransformer(mlContext ?? throw new ArgumentNullException(nameof(mlContext)), options);
+    }
+
+    /// <summary>
+    /// Creates a new client with its own MLContext (convenience for standalone MEAI usage).
+    /// </summary>
+    public OnnxWhisperSpeechToTextClient(OnnxWhisperOptions options)
+        : this(new MLContext(), options)
+    {
     }
 
     public SpeechToTextClientMetadata Metadata => new(
-        providerName: "OnnxGenAI-Whisper",
+        providerName: "OnnxWhisper-RawOnnx",
         providerUri: null,
-        defaultModelId: System.IO.Path.GetFileName(_options.ModelPath));
+        defaultModelId: Path.GetFileName(Path.GetDirectoryName(_options.EncoderModelPath)));
 
     public Task<SpeechToTextResponse> GetTextAsync(
-        Stream audioStream,
+        Stream audioSpeechStream,
         SpeechToTextOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var audio = LoadAndResample(audioStream, options);
-
+        var audio = LoadAndResample(audioSpeechStream, options);
         var results = _transformer.TranscribeWithTimestamps([audio]);
         var result = results[0];
 
@@ -64,18 +80,18 @@ public sealed class OnnxSpeechToTextClient : ISpeechToTextClient
     }
 
     public IAsyncEnumerable<SpeechToTextResponseUpdate> GetStreamingTextAsync(
-        Stream audioStream,
+        Stream audioSpeechStream,
         SpeechToTextOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        return StreamingImpl(audioStream, options, cancellationToken);
+        return StreamingImpl(audioSpeechStream, options, cancellationToken);
     }
 
 #pragma warning disable CS1998 // Async method lacks 'await' operators
     private async IAsyncEnumerable<SpeechToTextResponseUpdate> StreamingImpl(
-        Stream audioStream,
+        Stream audioSpeechStream,
         SpeechToTextOptions? options,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         yield return new SpeechToTextResponseUpdate
         {
@@ -91,7 +107,7 @@ public sealed class OnnxSpeechToTextClient : ISpeechToTextClient
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var audio = LoadAndResample(audioStream, options);
+            var audio = LoadAndResample(audioSpeechStream, options);
             var results = _transformer.TranscribeWithTimestamps([audio]);
             var result = results[0];
 

@@ -22,8 +22,8 @@ Multi-task audio inference transforms for ML.NET using local ONNX models. Brings
 | Audio Embeddings | ✅ | `OnnxAudioEmbeddingTransformer`, `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` |
 | Voice Activity Detection | ✅ | `OnnxVadTransformer` | `IVoiceActivityDetector` (custom) |
 | Speech-to-Text (Provider) | ✅ | `SpeechToTextClientTransformer` | `ISpeechToTextClient` (any provider) |
-| Speech-to-Text (ORT GenAI) | ✅ | `OnnxSpeechToTextTransformer` | `ISpeechToTextClient` |
-| Speech-to-Text (Raw ONNX) | ✅ | `OnnxWhisperTransformer`, `WhisperKvCacheManager` | — |
+| Speech-to-Text (ORT GenAI) | ✅ | `OnnxSpeechToTextTransformer`, `OnnxSpeechToTextClient` | `ISpeechToTextClient` |
+| Speech-to-Text (Raw ONNX) | ✅ | `OnnxWhisperTransformer`, `OnnxWhisperSpeechToTextClient` | `ISpeechToTextClient` |
 | Text-to-Speech (SpeechT5) | ✅ | `OnnxSpeechT5TtsTransformer`, `OnnxTextToSpeechClient` | `ITextToSpeechClient` (prototype) |
 
 ## Quick Start
@@ -79,7 +79,12 @@ var pipeline = mlContext.Transforms.OnnxVad(new OnnxVadOptions
 ISpeechToTextClient sttClient = /* Azure, OpenAI, local, etc. */;
 var pipeline = mlContext.Transforms.SpeechToText(sttClient);
 
-// --- Speech-to-Text (Raw ONNX Whisper) ---
+// --- Speech-to-Text (Raw ONNX Whisper via ISpeechToTextClient) ---
+ISpeechToTextClient whisperClient = new OnnxWhisperSpeechToTextClient(whisperOptions);
+var pipeline = mlContext.Transforms.SpeechToText(whisperClient);
+// or: mlContext.Transforms.OnnxWhisperSpeechToText(whisperOptions);
+
+// --- Speech-to-Text (Raw ONNX Whisper — direct transformer) ---
 var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
 {
     EncoderModelPath = "models/whisper-base/encoder_model.onnx",
@@ -108,9 +113,21 @@ IEmbeddingGenerator<AudioData, Embedding<float>> generator =
     new OnnxAudioEmbeddingGenerator(transformer);
 var embeddings = await generator.GenerateAsync([audio]);
 
-// Speech-to-Text via MEAI
+// Speech-to-Text via MEAI (ORT GenAI)
 ISpeechToTextClient sttClient = new OnnxSpeechToTextClient(sttOptions);
 var response = await sttClient.GetTextAsync(audioStream);
+
+// Speech-to-Text via MEAI (Raw ONNX — no ORT GenAI dep)
+ISpeechToTextClient rawClient = new OnnxWhisperSpeechToTextClient(whisperOptions);
+var response = await rawClient.GetTextAsync(audioStream);
+Console.WriteLine($"{response.Text} [{response.StartTime} → {response.EndTime}]");
+
+// Speech-to-Text with middleware pipeline
+var client = new OnnxSpeechToTextClient(sttOptions)
+    .AsBuilder()
+    .UseLogging()
+    .UseOpenTelemetry()
+    .Build();
 
 // Text-to-Speech via our prototype ITextToSpeechClient
 ITextToSpeechClient ttsClient = new OnnxTextToSpeechClient(ttsOptions);
