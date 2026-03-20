@@ -6,20 +6,22 @@ This project integrates with [Microsoft.Extensions.AI](https://learn.microsoft.c
 
 ## What's in MEAI Today vs What We Prototyped
 
-### Available in MEAI 10.x
+### Available in MEAI 10.4.1
 
 | Interface | Purpose | Used Here? |
 |-----------|---------|------------|
 | `IChatClient` | Text generation | No |
 | `IEmbeddingGenerator<TInput, TEmbedding>` | Embeddings | Yes — `IEmbeddingGenerator<AudioData, Embedding<float>>` |
 | `ISpeechToTextClient` | Speech-to-text (experimental) | Yes — 3 implementations |
+| `ITextToSpeechClient` | Text-to-speech (experimental) | Yes — `OnnxTextToSpeechClient` (SpeechT5 + KittenTTS) |
 | `IImageGenerator` | Image generation (experimental) | No |
 
-### Prototyped in This Project (Not in MEAI)
+> Suppress `AIEXP001` and `MEAI001` diagnostics when using the experimental `ITextToSpeechClient` interface.
+
+### Custom Interfaces (Not in MEAI)
 
 | Interface | Purpose | Notes |
 |-----------|---------|-------|
-| `ITextToSpeechClient` | Text-to-speech | Defined following MEAI patterns |
 | `IVoiceActivityDetector` | Voice activity detection | Custom interface |
 
 ## Audio Embedding Generator
@@ -337,46 +339,40 @@ Console.WriteLine(metadata?.ProviderName);    // "OnnxGenAI-Whisper" or "OnnxWhi
 Console.WriteLine(metadata?.DefaultModelId);  // "whisper-base"
 ```
 
-## Text-to-Speech Client (Prototype)
+## Text-to-Speech Client (Official MEAI)
 
 `OnnxTextToSpeechClient : ITextToSpeechClient`
 
-> **Note:** MEAI does **not** have `ITextToSpeechClient` as of 10.x. We defined one following MEAI patterns to prototype what it might look like.
+> `ITextToSpeechClient` is the official MEAI interface from `Microsoft.Extensions.AI.Abstractions` 10.4.1 (marked `[Experimental]`). Suppress `AIEXP001` and `MEAI001` diagnostics.
 
-### Interface
+`OnnxTextToSpeechClient` supports two TTS backends via constructor overloads:
+- `new OnnxTextToSpeechClient(OnnxSpeechT5Options)` — SpeechT5 (3 models, 16 kHz)
+- `new OnnxTextToSpeechClient(OnnxKittenTtsOptions)` — KittenTTS (1 model + espeak-ng, 24 kHz)
 
-```csharp
-public interface ITextToSpeechClient : IDisposable
-{
-    TextToSpeechClientMetadata Metadata { get; }
-
-    Task<TextToSpeechResponse> GetAudioAsync(
-        string text,
-        TextToSpeechOptions? options = null,
-        CancellationToken cancellationToken = default);
-
-    IAsyncEnumerable<TextToSpeechResponseUpdate> GetStreamingAudioAsync(
-        string text,
-        TextToSpeechOptions? options = null,
-        CancellationToken cancellationToken = default);
-}
-```
+Internally, both constructors produce an `IOnnxTtsSynthesizer` implementation — an internal interface that abstracts the synthesis backend so the client itself is provider-agnostic.
 
 ### Usage
 
 ```csharp
+// SpeechT5 backend
 using var client = new OnnxTextToSpeechClient(new OnnxSpeechT5Options { ... });
 
-// One-shot
-var response = await client.GetAudioAsync("Hello, world!");
-AudioIO.SaveWav("output.wav", response.Audio);
+// KittenTTS backend
+using var client = new OnnxTextToSpeechClient(new OnnxKittenTtsOptions { ... });
 
-// Streaming
-await foreach (var update in client.GetStreamingAudioAsync("Hello, world!"))
-{
-    PlayAudio(update.Audio);
-    if (update.IsFinal) break;
-}
+// One-shot — audio returned as DataContent with WAV bytes
+var response = await client.GetAudioAsync("Hello, world!");
+var audioContent = response.Contents.OfType<DataContent>().First();
+File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
+
+// Voice selection via TextToSpeechOptions.VoiceId
+var options = new TextToSpeechOptions { VoiceId = "Bella" }; // KittenTTS voices: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
+var response = await client.GetAudioAsync("Hello!", options);
+
+// Metadata via GetService
+var metadata = client.GetService<TextToSpeechClientMetadata>();
+Console.WriteLine(metadata?.ProviderName);    // "OnnxSpeechT5" or "OnnxKittenTTS"
+Console.WriteLine(metadata?.DefaultModelId);
 ```
 
 ## Voice Activity Detector (Custom Interface)
@@ -397,13 +393,12 @@ public record SpeechSegment(TimeSpan Start, TimeSpan End, float Confidence);
 
 ## What's Missing in MEAI for Audio
 
-The following capabilities don't exist in MEAI today. We prototyped some of them to explore what audio-first MEAI support could look like:
+The following capabilities don't exist in MEAI today:
 
-1. **`ITextToSpeechClient`** — we prototyped it; should be proposed upstream for MEAI.
-2. **`IAudioClassifier`** — no MEAI interface for classification tasks (e.g., sound event detection, genre tagging).
-3. **`IVoiceActivityDetector`** — very audio-specific; may not fit MEAI's general-purpose scope.
-4. **`AudioData` as a first-class type** — MEAI has no audio primitive type; we defined our own.
-5. **Streaming audio** — MEAI's streaming patterns work but need audio chunking support for real-time scenarios.
+1. **`IAudioClassifier`** — no MEAI interface for classification tasks (e.g., sound event detection, genre tagging).
+2. **`IVoiceActivityDetector`** — very audio-specific; may not fit MEAI's general-purpose scope.
+3. **`AudioData` as a first-class type** — MEAI has no audio primitive type; we defined our own.
+4. **Streaming audio** — MEAI's streaming patterns work but need audio chunking support for real-time scenarios.
 
 ## DataIngestion Integration
 

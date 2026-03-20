@@ -24,7 +24,8 @@ Multi-task audio inference transforms for ML.NET using local ONNX models. Brings
 | Speech-to-Text (Provider) | ✅ | `SpeechToTextClientTransformer` | `ISpeechToTextClient` (any provider) |
 | Speech-to-Text (ORT GenAI) | ✅ | `OnnxSpeechToTextTransformer`, `OnnxSpeechToTextClient` | `ISpeechToTextClient` |
 | Speech-to-Text (Raw ONNX) | ✅ | `OnnxWhisperTransformer`, `OnnxWhisperSpeechToTextClient` | `ISpeechToTextClient` |
-| Text-to-Speech (SpeechT5) | ✅ | `OnnxSpeechT5TtsTransformer`, `OnnxTextToSpeechClient` | `ITextToSpeechClient` (prototype) |
+| Text-to-Speech (SpeechT5) | ✅ | `OnnxSpeechT5TtsTransformer`, `OnnxTextToSpeechClient` | `ITextToSpeechClient` |
+| Text-to-Speech (KittenTTS) | ✅ | `OnnxTextToSpeechClient` via `OnnxKittenTtsOptions` | `ITextToSpeechClient` |
 
 ## Quick Start
 
@@ -129,10 +130,11 @@ var client = new OnnxSpeechToTextClient(sttOptions)
     .UseOpenTelemetry()
     .Build();
 
-// Text-to-Speech via our prototype ITextToSpeechClient
+// Text-to-Speech via official MEAI ITextToSpeechClient
 ITextToSpeechClient ttsClient = new OnnxTextToSpeechClient(ttsOptions);
 var response = await ttsClient.GetAudioAsync("Hello, world!");
-AudioIO.SaveWav("output.wav", response.Audio);
+var audioContent = response.Contents.OfType<DataContent>().First();
+File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
 ```
 
 See [MEAI Integration Guide](docs/meai-integration.md) for DI patterns and middleware.
@@ -174,6 +176,7 @@ See [Architecture Guide](docs/architecture.md) for the full layered design.
 | [`WhisperTranscription`](samples/WhisperTranscription) | STT | Local Whisper via ORT GenAI |
 | [`WhisperRawOnnx`](samples/WhisperRawOnnx) | STT | Full-control Whisper with manual KV cache |
 | [`TextToSpeech`](samples/TextToSpeech) | TTS | SpeechT5 encoder-decoder-vocoder synthesis |
+| [`KittenTTS`](samples/KittenTTS) | TTS | Lightweight KittenTTS with espeak-ng phonemization |
 | [`AudioDataIngestion`](samples/AudioDataIngestion) | DataIngestion | End-to-end Read → Chunk → Embed → Similarity Search |
 
 All samples run without models — they show API patterns and download instructions as graceful fallback.
@@ -198,7 +201,7 @@ Three-stage pipeline pattern mirroring the text transform architecture. See [Arc
 |-----------|-----------|
 | `System.Numerics.Tensors` / `TensorPrimitives` | Softmax, normalization, mel features, argmax, temperature sampling |
 | `Microsoft.ML.Tokenizers` (SentencePiece) | SpeechT5 text tokenization (with `SentencePieceCharTokenizer` fallback from Audio.Tokenizers for Char models) |
-| `Microsoft.Extensions.AI` | `IEmbeddingGenerator`, `ISpeechToTextClient`, `ITextToSpeechClient` (prototype) |
+| `Microsoft.Extensions.AI` | `IEmbeddingGenerator`, `ISpeechToTextClient`, `ITextToSpeechClient` |
 | `Microsoft.Extensions.DataIngestion` | `IngestionDocumentReader`, `IngestionChunker<AudioData>`, `IngestionChunkProcessor<AudioData>` |
 | Custom `WhisperTokenizer` | Whisper BPE + timestamps + language codes |
 | `AudioFeatureExtractor` (abstract) | Audio's equivalent of `Tokenizer` |

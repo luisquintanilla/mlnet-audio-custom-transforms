@@ -457,16 +457,67 @@ AudioIO.SaveWav("output.wav", audio);
 ```csharp
 using var client = new OnnxTextToSpeechClient(options);
 var response = await client.GetAudioAsync("Say something");
-AudioIO.SaveWav("output.wav", response.Audio);
+var audioContent = response.Contents.OfType<DataContent>().First();
+File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
 ```
 
-> **Note:** `ITextToSpeechClient` is a prototype MEAI-style interface. When Microsoft.Extensions.AI adds an official TTS interface, this will be updated to match.
+> **Note:** `ITextToSpeechClient` is the official MEAI interface from `Microsoft.Extensions.AI.Abstractions` 10.4.1 (marked `[Experimental]`). Suppress `AIEXP001` and `MEAI001` diagnostics.
 
 **Limitations:**
 
 - English-only (SpeechT5 is trained on LibriTTS)
 - Best for short utterances (1–2 sentences). Quality degrades on very long text.
 - Single speaker by default — provide a different `.npy` x-vector for voice cloning
+
+### KittenTTS (KittenML)
+
+KittenTTS is a lightweight TTS model that uses espeak-ng for phonemization instead of SentencePiece tokenization. It produces 24 kHz audio from a single ONNX model (no separate encoder/decoder/vocoder split). Available in three sizes from HuggingFace.
+
+**Download:**
+
+```bash
+huggingface-cli download KittenML/kitten-tts-mini-0.8 --include "*.onnx" --local-dir models/kitten-tts-mini
+```
+
+**Available models:**
+
+| Model | HuggingFace Repo | Description |
+|-------|-------------------|-------------|
+| KittenTTS Mini | `KittenML/kitten-tts-mini-0.8` | Largest / highest quality |
+| KittenTTS Micro | `KittenML/kitten-tts-micro-0.8` | Mid-size balance |
+| KittenTTS Nano | `KittenML/kitten-tts-nano-0.8` | Smallest / fastest |
+
+**Voices:** Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
+
+**Prerequisites:** [espeak-ng](https://github.com/espeak-ng/espeak-ng) must be installed for phonemization.
+
+**Usage:**
+
+```csharp
+using MLNet.AudioInference.Onnx;
+
+var options = new OnnxKittenTtsOptions
+{
+    ModelPath = @"models\kitten-tts-mini\model.onnx",
+    Voice = "Bella",
+    SampleRate = 24000
+};
+
+using var client = new OnnxTextToSpeechClient(options);
+var response = await client.GetAudioAsync("Hello from KittenTTS!");
+var audioContent = response.Contents.OfType<DataContent>().First();
+File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
+```
+
+**Key differences from SpeechT5:**
+
+| | SpeechT5 | KittenTTS |
+|---|---|---|
+| **Models** | 3 (encoder + decoder + vocoder) | 1 (single ONNX) |
+| **Phonemization** | SentencePiece tokenizer | espeak-ng |
+| **Output sample rate** | 16 kHz | 24 kHz |
+| **Voice selection** | Speaker embedding (.npy) | Named voices (Bella, Jasper, etc.) |
+| **Total model size** | ~643 MB | Varies by model size |
 
 ---
 
@@ -513,6 +564,11 @@ samples/
 │           ├── decoder_postnet_and_vocoder.onnx
 │           ├── spm_char.model
 │           └── speaker.npy
+│
+├── KittenTTS/
+│   └── models/
+│       └── kitten-tts-mini/
+│           └── model.onnx
 │
 └── SpeechToText/                 (Provider-agnostic — uses any ISpeechToTextClient)
     └── (no local models needed)
@@ -661,3 +717,4 @@ GPU provides minimal benefit for Silero VAD (already sub-millisecond on CPU) or 
 | VAD | Silero VAD | `huggingface-cli download snakers4/silero-vad --include "*.onnx" --local-dir models/silero-vad` | `models/silero-vad/silero_vad.onnx` |
 | STT (Raw ONNX) | Whisper | `optimum-cli export onnx --model openai/whisper-base models/whisper-base/` | `encoder_model.onnx` + `decoder_model_merged.onnx` |
 | TTS | SpeechT5 | `git clone https://huggingface.co/NeuML/txtai-speecht5-onnx models/speecht5` | `encoder_model.onnx` + `decoder_model_merged.onnx` + `decoder_postnet_and_vocoder.onnx` |
+| TTS | KittenTTS Mini | `huggingface-cli download KittenML/kitten-tts-mini-0.8 --include "*.onnx" --local-dir models/kitten-tts-mini` | `model.onnx` |

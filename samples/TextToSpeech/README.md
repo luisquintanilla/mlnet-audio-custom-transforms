@@ -5,7 +5,7 @@
 - **TTS synthesis** — how text becomes natural-sounding speech waveforms
 - **Encoder-decoder-vocoder architecture** — why TTS needs *three* models, not two
 - **Speaker embeddings** — how a fixed vector controls voice identity without retraining
-- **`ITextToSpeechClient`** — a prototype MEAI-style interface for TTS (MEAI doesn't have one yet)
+- **`ITextToSpeechClient`** — the official MEAI interface for TTS, backed by local ONNX models
 - **Whisper ↔ SpeechT5 symmetry** — how ASR and TTS are mirror-image pipelines sharing the same KV cache pattern
 
 ## The Concept: Text-to-Speech Synthesis
@@ -102,17 +102,18 @@ AudioIO.SaveWav("output.wav", audio);
 
 **Why:** Minimal boilerplate. Best for quick experiments and scripts.
 
-### 2. ITextToSpeechClient (MEAI-style) — `client.GetAudioAsync(text)`
+### 2. ITextToSpeechClient (official MEAI) — `client.GetAudioAsync(text)`
 
-A prototype interface modeled after MEAI conventions (`ISpeechToTextClient`, `IEmbeddingGenerator`, etc.). Exposes `GetAudioAsync` for one-shot synthesis and `GetStreamingAudioAsync` for chunked output.
+The official `ITextToSpeechClient` from `Microsoft.Extensions.AI.Abstractions` 10.4.1. `OnnxTextToSpeechClient` implements this interface using SpeechT5 (or KittenTTS) as the backend.
 
 ```csharp
 using var client = new OnnxTextToSpeechClient(options);
 var response = await client.GetAudioAsync("Say something");
-// response.Audio → AudioData, response.Voice → voice ID
+var audioContent = response.Contents.OfType<DataContent>().First();
+File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
 ```
 
-**Why:** Shows what an MEAI TTS interface *could* look like. MEAI doesn't have `ITextToSpeechClient` yet — this is a prototype exploring the design space. When MEAI adds official TTS support, this implementation can be swapped in as a provider.
+**Why:** Standard MEAI interface — same pattern used for `ISpeechToTextClient` and `IEmbeddingGenerator<,>`. Supports middleware, DI, and provider swapping.
 
 ### 3. ML.NET Pipeline — `Fit` / `Transform`
 
@@ -269,15 +270,13 @@ To use a different voice:
 2. Save it as a `.npy` float32 array
 3. Pass it to `Synthesize(text, speakerEmbedding)` or set `TextToSpeechOptions.SpeakerEmbedding`
 
-### ITextToSpeechClient — MEAI-Style Interface
+### ITextToSpeechClient — Official MEAI Interface
 
-The `ITextToSpeechClient` interface follows MEAI conventions:
+The `ITextToSpeechClient` interface from `Microsoft.Extensions.AI.Abstractions` 10.4.1:
 
 ```csharp
 public interface ITextToSpeechClient : IDisposable
 {
-    TextToSpeechClientMetadata Metadata { get; }
-
     Task<TextToSpeechResponse> GetAudioAsync(
         string text,
         TextToSpeechOptions? options = null,
@@ -287,12 +286,14 @@ public interface ITextToSpeechClient : IDisposable
         string text,
         TextToSpeechOptions? options = null,
         CancellationToken cancellationToken = default);
+
+    object? GetService(Type serviceType, object? serviceKey = null);
 }
 ```
 
-`OnnxTextToSpeechClient` implements this interface using SpeechT5 as the backend. The `Metadata` property reports the provider name ("OnnxSpeechT5") and model ID. `TextToSpeechOptions` supports voice selection, speed, language, and custom speaker embeddings.
+`OnnxTextToSpeechClient` implements this interface using SpeechT5 as the backend (or KittenTTS via the `OnnxKittenTtsOptions` constructor overload). Audio is returned as `DataContent` with WAV bytes in `TextToSpeechResponse.Contents`. Provider metadata is available via `GetService<TextToSpeechClientMetadata>()`.
 
-**Important:** This is a **prototype**. MEAI (Microsoft.Extensions.AI) does not have an official `ITextToSpeechClient` as of the current release. This implementation explores what that interface might look like, following the patterns established by `ISpeechToTextClient` and `IEmbeddingGenerator<,>`.
+`TextToSpeechOptions` supports voice selection (`VoiceId`), speed, language, and custom speaker embeddings (via `AdditionalProperties["speakerEmbedding"]`).
 
 ### Voice Round-Trip Pipeline
 
@@ -312,7 +313,7 @@ This creates an audio-to-audio pipeline: input audio is transcribed by Whisper, 
 
 2. **Speaker embeddings enable voice selection without retraining.** A single trained model can produce speech in any voice by swapping the 512-dimensional embedding vector. This is fundamentally different from fine-tuning.
 
-3. **`ITextToSpeechClient` is a PROTOTYPE.** MEAI doesn't define a TTS interface yet. This implementation explores the design space — `GetAudioAsync`, `GetStreamingAudioAsync`, `Metadata` — following patterns established by other MEAI interfaces. When MEAI adds official TTS support, this can serve as a reference implementation.
+3. **`ITextToSpeechClient` is the official MEAI interface.** Available in `Microsoft.Extensions.AI.Abstractions` 10.4.1 (marked `[Experimental]`). `OnnxTextToSpeechClient` accepts both `OnnxSpeechT5Options` and `OnnxKittenTtsOptions` — one client for all local TTS backends via the internal `IOnnxTtsSynthesizer` interface.
 
 4. **Whisper and SpeechT5 are mirrors.** Same KV cache autoregressive pattern, opposite direction. Understanding one helps you understand the other. The key insight: both models generate output *one step at a time*, feeding each output back as input to the next step.
 
@@ -321,6 +322,7 @@ This creates an audio-to-audio pipeline: input audio is transcribed by Whisper, 
 | Sample / Doc | What It Shows | Relationship to TTS |
 |---|---|---|
 | [`samples/WhisperRawOnnx`](../WhisperRawOnnx/) | Raw ONNX Whisper ASR with manual KV cache | **Reverse direction**: audio → text using the same KV cache pattern |
+| [`samples/KittenTTS`](../KittenTTS/) | Lightweight TTS with espeak-ng phonemization | **Alternative TTS backend**: single-model approach vs SpeechT5's 3-model pipeline |
 | [`samples/SpeechToText`](../SpeechToText/) | Provider-agnostic ASR via `ISpeechToTextClient` | **Round-trip partner**: pairs with TTS for voice conversion pipelines |
 | [`docs/architecture.md`](../../docs/architecture.md) | Full system architecture, TTS pipeline section | Deep dive into encoder-decoder-vocoder data flow and KV cache management |
 | [`docs/meai-integration.md`](../../docs/meai-integration.md) | MEAI interface mapping and DI patterns | Design rationale for `ITextToSpeechClient` and integration with ASP.NET |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project includes 8 runnable samples demonstrating different audio AI tasks. Each sample gracefully handles missing models — showing API patterns and download instructions instead of crashing.
+The project includes 9 runnable samples demonstrating different audio AI tasks. Each sample gracefully handles missing models — showing API patterns and download instructions instead of crashing.
 
 ## Prerequisites
 
@@ -191,7 +191,7 @@ dotnet run
 ### What it demonstrates
 
 - `OnnxSpeechT5TtsTransformer` direct synthesis: `Synthesize("Hello!")`
-- `OnnxTextToSpeechClient : ITextToSpeechClient` (MEAI-style prototype)
+- `OnnxTextToSpeechClient : ITextToSpeechClient` (official MEAI interface)
 - ML.NET pipeline: `mlContext.Transforms.SpeechT5Tts(options)`
 - SentencePiece tokenization → Encoder → Decoder (KV cache) → Vocoder → PCM
 - Custom speaker embedding from `.npy` file
@@ -201,6 +201,33 @@ dotnet run
 ### Without model
 
 Shows 5 patterns: direct synthesis, `ITextToSpeechClient`, ML.NET pipeline, custom speaker embedding, and voice round-trip.
+
+## KittenTTS
+
+**Location:** `samples/KittenTTS/`
+**Task:** Lightweight text-to-speech using KittenTTS with espeak-ng phonemization
+**Model needed:** `KittenML/kitten-tts-mini-0.8` (or micro/nano variants)
+
+### Setup
+
+```bash
+cd samples/KittenTTS
+huggingface-cli download KittenML/kitten-tts-mini-0.8 --include "*.onnx" --local-dir models/kitten-tts-mini
+dotnet run
+```
+
+### What it demonstrates
+
+- `OnnxTextToSpeechClient : ITextToSpeechClient` with `OnnxKittenTtsOptions`
+- Same `ITextToSpeechClient` interface as SpeechT5 — swap backends without changing calling code
+- espeak-ng phonemization (requires espeak-ng installed)
+- Named voice selection: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
+- 24 kHz output (vs SpeechT5's 16 kHz)
+- Single ONNX model (no encoder/decoder/vocoder split)
+
+### Without model
+
+Shows API patterns with code examples and download instructions, then exits.
 
 ## AudioDataIngestion
 
@@ -250,6 +277,7 @@ dotnet run --project samples/SpeechToText
 dotnet run --project samples/WhisperTranscription
 dotnet run --project samples/WhisperRawOnnx
 dotnet run --project samples/TextToSpeech
+dotnet run --project samples/KittenTTS
 dotnet run --project samples/AudioDataIngestion
 ```
 

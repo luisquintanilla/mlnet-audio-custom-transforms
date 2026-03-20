@@ -94,6 +94,19 @@ public static class MLContextExtensions
         return new OnnxSpeechT5TtsEstimator(mlContext, options);
     }
 
+    /// <summary>
+    /// Creates a KittenTTS text-to-speech estimator using raw ONNX Runtime.
+    /// Uses models from KittenML/KittenTTS (HuggingFace).
+    /// Single-pass model with espeak-ng phonemization: text → phonemes → waveform at 24 kHz.
+    /// </summary>
+    public static OnnxKittenTtsEstimator KittenTts(
+        this TransformsCatalog catalog,
+        OnnxKittenTtsOptions options)
+    {
+        var mlContext = GetMLContext(catalog);
+        return new OnnxKittenTtsEstimator(mlContext, options);
+    }
+
     private static MLContext GetMLContext(TransformsCatalog catalog)
     {
         // Use reflection to get MLContext from TransformsCatalog

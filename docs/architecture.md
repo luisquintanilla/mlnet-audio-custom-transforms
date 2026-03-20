@@ -38,7 +38,7 @@ Extends `Microsoft.ML.Tokenizers` with tokenizer implementations for audio/speec
 
 ML.NET `IEstimator<T>`/`ITransformer` implementations for all audio tasks.
 
-**Dependencies:** Microsoft.ML 5.0.0, Microsoft.ML.OnnxRuntime.Managed 1.24.2, Microsoft.ML.Tokenizers 2.0.0, Microsoft.Extensions.AI.Abstractions 10.3.0, System.Numerics.Tensors 10.0.3
+**Dependencies:** Microsoft.ML 5.0.0, Microsoft.ML.OnnxRuntime.Managed 1.24.2, Microsoft.ML.Tokenizers 2.0.0, Microsoft.Extensions.AI.Abstractions 10.4.1, System.Numerics.Tensors 10.0.3
 
 **Project reference:** MLNet.Audio.Core
 
@@ -50,7 +50,7 @@ ML.NET `IEstimator<T>`/`ITransformer` implementations for all audio tasks.
 | ASR/ | `SpeechToTextClientEstimator`, `SpeechToTextClientTransformer`, `SpeechToTextClientOptions` | Provider-agnostic ASR wrapping any `ISpeechToTextClient` |
 | ASR/ | `OnnxWhisperEstimator`, `OnnxWhisperTransformer`, `OnnxWhisperOptions`, `WhisperKvCacheManager` | Raw ONNX Whisper with manual encoder/decoder/KV cache management |
 | TTS/ | `OnnxSpeechT5TtsEstimator`, `OnnxSpeechT5TtsTransformer`, `OnnxSpeechT5Options` | SpeechT5 text-to-speech: encoder → decoder (KV cache) → vocoder |
-| TTS/ | `ITextToSpeechClient`, `OnnxTextToSpeechClient`, `TextToSpeechResponse`, `TextToSpeechResponseUpdate`, `TextToSpeechOptions`, `TextToSpeechClientMetadata` | MEAI-style TTS interface (prototype — MEAI doesn't have this yet) |
+| TTS/ | `OnnxTextToSpeechClient`, `IOnnxTtsSynthesizer` (internal) | Official MEAI `ITextToSpeechClient` — one client for all TTS backends (SpeechT5, KittenTTS) via `IOnnxTtsSynthesizer` |
 | MEAI/ | `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` bridge to MEAI |
 | Shared/ | `AudioFeatureExtractionEstimator`, `AudioFeatureExtractionTransformer`, `OnnxAudioScoringEstimator`, `OnnxAudioScoringTransformer`, `EnCodecTokenizer` | Reusable sub-transforms for the composed 3-stage pipeline. Feature extraction (Stage 1) and ONNX scoring (Stage 2) are shared across classification and embeddings |
 
@@ -69,7 +69,7 @@ mlContext.Transforms.SpeechToText(client, options)
 
 Separate package for Whisper speech-to-text via ONNX Runtime GenAI. ORT GenAI handles the autoregressive decoder loop internally — simplest local ASR with minimal code.
 
-**Dependencies:** Microsoft.ML 5.0.0, Microsoft.ML.OnnxRuntimeGenAI.Managed 0.12.1, Microsoft.Extensions.AI.Abstractions 10.3.0
+**Dependencies:** Microsoft.ML 5.0.0, Microsoft.ML.OnnxRuntimeGenAI.Managed 0.12.1, Microsoft.Extensions.AI.Abstractions 10.4.1
 
 **Project reference:** MLNet.Audio.Core (NOT MLNet.AudioInference.Onnx)
 
@@ -91,16 +91,16 @@ Separate package for Whisper speech-to-text via ONNX Runtime GenAI. ORT GenAI ha
 |----------------|---------------|---------|
 | `IEmbeddingGenerator<AudioData, Embedding<float>>` | `OnnxAudioEmbeddingGenerator` | MLNet.AudioInference.Onnx |
 | `ISpeechToTextClient` | `OnnxSpeechToTextClient` | MLNet.ASR.OnnxGenAI |
-| `ITextToSpeechClient` (prototype) | `OnnxTextToSpeechClient` | MLNet.AudioInference.Onnx |
+| `ITextToSpeechClient` | `OnnxTextToSpeechClient` | MLNet.AudioInference.Onnx |
 | `IVoiceActivityDetector` (custom) | `OnnxVadTransformer` | MLNet.AudioInference.Onnx |
 
-`ITextToSpeechClient` is a prototype following MEAI conventions (`GetAudioAsync`, `GetStreamingAudioAsync`, `Metadata`). When MEAI adds an official TTS interface, this can be replaced.
+`OnnxTextToSpeechClient` implements the official MEAI `ITextToSpeechClient` from 10.4.1. It accepts both `OnnxSpeechT5Options` and `OnnxKittenTtsOptions` — one client for all local TTS backends via the internal `IOnnxTtsSynthesizer` interface. SpeechT5 uses 3 models (encoder + decoder + vocoder, 16 kHz output); KittenTTS uses 1 model + espeak-ng for phonemization (24 kHz output).
 
 ### Layer 4: DataIngestion (`MLNet.Audio.DataIngestion`)
 
 [Microsoft.Extensions.DataIngestion](https://www.nuget.org/packages/Microsoft.Extensions.DataIngestion.Abstractions) integration — proving DataIngestion is modality-agnostic, not just for text/PDF.
 
-**Dependencies:** Microsoft.Extensions.DataIngestion.Abstractions 10.3.0-preview.1, Microsoft.Extensions.AI.Abstractions 10.3.0
+**Dependencies:** Microsoft.Extensions.DataIngestion.Abstractions 10.3.0-preview.1, Microsoft.Extensions.AI.Abstractions 10.4.1
 
 **Project reference:** MLNet.Audio.Core
 
@@ -197,6 +197,16 @@ string → SentencePiece tokenizer (Microsoft.ML.Tokenizers) → token IDs
        → ONNX vocoder (postnet + HiFi-GAN) → PCM waveform
        → AudioData (float[] samples, 16kHz)
 ```
+
+**TTS — KittenTTS** (via `OnnxTextToSpeechClient` + `OnnxKittenTtsOptions`):
+
+```
+string → espeak-ng phonemization → phoneme IDs
+       → ONNX model (single model, no separate vocoder) → PCM waveform
+       → AudioData (float[] samples, 24kHz)
+```
+
+KittenTTS is a lightweight alternative to SpeechT5: single model (no encoder/decoder/vocoder split), espeak-ng handles phonemization instead of SentencePiece, and output is 24 kHz. Voices: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo.
 
 ## Text vs Audio Architecture Comparison
 
