@@ -77,7 +77,7 @@ public static class MLContextExtensions
         OnnxWhisperOptions options)
     {
         var mlContext = GetMLContext(catalog);
-        ISpeechToTextClient client = new OnnxWhisperSpeechToTextClient(options);
+        ISpeechToTextClient client = new OnnxWhisperSpeechToTextClient(mlContext, options);
         return new SpeechToTextClientEstimator(mlContext, client);
     }
 

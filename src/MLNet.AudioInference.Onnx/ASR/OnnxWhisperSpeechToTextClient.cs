@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
+using Microsoft.ML;
 using MLNet.Audio.Core;
 
 namespace MLNet.AudioInference.Onnx;
@@ -18,10 +19,21 @@ public sealed class OnnxWhisperSpeechToTextClient : ISpeechToTextClient
     private readonly OnnxWhisperTransformer _transformer;
     private readonly OnnxWhisperOptions _options;
 
-    public OnnxWhisperSpeechToTextClient(OnnxWhisperOptions options)
+    /// <summary>
+    /// Creates a new client with a shared MLContext (preferred when used from ML.NET pipelines).
+    /// </summary>
+    public OnnxWhisperSpeechToTextClient(MLContext mlContext, OnnxWhisperOptions options)
     {
-        _options = options;
-        _transformer = new OnnxWhisperTransformer(new Microsoft.ML.MLContext(), options);
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _transformer = new OnnxWhisperTransformer(mlContext ?? throw new ArgumentNullException(nameof(mlContext)), options);
+    }
+
+    /// <summary>
+    /// Creates a new client with its own MLContext (convenience for standalone MEAI usage).
+    /// </summary>
+    public OnnxWhisperSpeechToTextClient(OnnxWhisperOptions options)
+        : this(new MLContext(), options)
+    {
     }
 
     public SpeechToTextClientMetadata Metadata => new(
@@ -75,57 +87,75 @@ public sealed class OnnxWhisperSpeechToTextClient : ISpeechToTextClient
         return StreamingImpl(audioSpeechStream, options, cancellationToken);
     }
 
+#pragma warning disable CS1998 // Async method lacks 'await' operators
     private async IAsyncEnumerable<SpeechToTextResponseUpdate> StreamingImpl(
         Stream audioSpeechStream,
         SpeechToTextOptions? options,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // Session open
         yield return new SpeechToTextResponseUpdate
         {
             Kind = SpeechToTextResponseUpdateKind.SessionOpen
         };
 
-        cancellationToken.ThrowIfCancellationRequested();
+        // Pre-compute updates in a list so we can use try/catch
+        // (C# does not allow yield return inside try blocks with catch clauses).
+        var updates = new List<SpeechToTextResponseUpdate>();
+        SpeechToTextResponseUpdate? errorUpdate = null;
 
-        var audio = LoadAndResample(audioSpeechStream, options);
-        var results = _transformer.TranscribeWithTimestamps([audio]);
-        var result = results[0];
-
-        // Yield per-segment updates with timestamps
-        if (result.Segments.Length > 0)
+        try
         {
-            foreach (var segment in result.Segments)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
+            cancellationToken.ThrowIfCancellationRequested();
 
-                yield return new SpeechToTextResponseUpdate(segment.Text)
+            var audio = LoadAndResample(audioSpeechStream, options);
+            var results = _transformer.TranscribeWithTimestamps([audio]);
+            var result = results[0];
+
+            if (result.Segments.Length > 0)
+            {
+                foreach (var segment in result.Segments)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    updates.Add(new SpeechToTextResponseUpdate(segment.Text)
+                    {
+                        Kind = SpeechToTextResponseUpdateKind.TextUpdated,
+                        StartTime = segment.Start,
+                        EndTime = segment.End,
+                        ModelId = options?.ModelId ?? Metadata.DefaultModelId,
+                    });
+                }
+            }
+            else
+            {
+                updates.Add(new SpeechToTextResponseUpdate(result.Text)
                 {
                     Kind = SpeechToTextResponseUpdateKind.TextUpdated,
-                    StartTime = segment.Start,
-                    EndTime = segment.End,
                     ModelId = options?.ModelId ?? Metadata.DefaultModelId,
-                };
+                });
             }
         }
-        else
+        catch (Exception ex)
         {
-            // No segments — yield full text as a single update
-            yield return new SpeechToTextResponseUpdate(result.Text)
+            errorUpdate = new SpeechToTextResponseUpdate(ex.Message)
             {
-                Kind = SpeechToTextResponseUpdateKind.TextUpdated,
+                Kind = SpeechToTextResponseUpdateKind.Error,
                 ModelId = options?.ModelId ?? Metadata.DefaultModelId,
             };
         }
 
-        // Session close
+        foreach (var update in updates)
+            yield return update;
+
+        if (errorUpdate is not null)
+            yield return errorUpdate;
+
         yield return new SpeechToTextResponseUpdate
         {
             Kind = SpeechToTextResponseUpdateKind.SessionClose
         };
-
-        await Task.CompletedTask;
     }
+#pragma warning restore CS1998
 
     public object? GetService(Type serviceType, object? serviceKey = null)
     {

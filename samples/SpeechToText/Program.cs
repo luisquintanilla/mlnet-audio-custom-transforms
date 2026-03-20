@@ -113,6 +113,8 @@ Console.WriteLine("""
     }
 
     // Or collect into a single response:
+    // (If reusing a stream from a previous call, reset position first:
+    //  audioStream.Position = 0;)
     var response = await client.GetStreamingTextAsync(audioStream)
         .ToSpeechToTextResponseAsync();
     """);

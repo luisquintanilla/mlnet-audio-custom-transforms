@@ -112,6 +112,7 @@ var response = await client.GetTextAsync(stream);
 Console.WriteLine(response.Text);
 
 // Streaming with per-segment timestamps
+stream.Position = 0; // Rewind before reusing the stream
 await foreach (var update in client.GetStreamingTextAsync(stream))
 {
     switch (update.Kind)
@@ -246,19 +247,24 @@ public class TranscriptionService(ISpeechToTextClient sttClient)
 
 ### Options Passed to Providers
 
-The MEAI `SpeechToTextOptions` type carries language, sample rate, and model information that our clients honor:
+The MEAI `SpeechToTextOptions` type carries language, sample rate, and model information. Our clients honor some fields at request time and others at construction time:
 
 ```csharp
 var options = new SpeechToTextOptions
 {
-    SpeechLanguage = "es",           // Source speech language
-    TextLanguage = "en",             // Target text language (for translation)
-    SpeechSampleRate = 16000,        // Auto-resample audio to this rate
-    ModelId = "whisper-large-v3",    // Override default model
+    SpeechLanguage = "es",           // Set at construction time via options class (not per-request)
+    TextLanguage = "en",             // Set at construction time via options class (not per-request)
+    SpeechSampleRate = 16000,        // ✅ Honored at request time — auto-resamples audio
+    ModelId = "whisper-large-v3",    // ✅ Honored at request time — used in response metadata
 };
 
 var response = await client.GetTextAsync(audioStream, options);
 ```
+
+> **Note:** `SpeechLanguage` and `TextLanguage` are configured when creating the client via
+> `OnnxWhisperOptions.Language` / `OnnxSpeechToTextOptions.Language` and `Translate`. These fields
+> on `SpeechToTextOptions` are not consumed at request time by the current local clients.
+> Cloud providers (Azure, OpenAI) may honor them per-request.
 
 ### Rich Response Metadata
 
