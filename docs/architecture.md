@@ -336,9 +336,9 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
     │ Inference.Onnx    │  │                          │
     │                   │  │ + Microsoft.ML 5.0.0     │
     │ + Microsoft.ML    │  │ + ORT GenAI 0.12.1       │
-    │ + ORT 1.24.2      │  │ + MEAI 10.3.0            │
+    │ + ORT 1.24.2      │  │ + MEAI 10.4.1            │
     │ + ML.Tokenizers   │  └──────────────────────────┘
-    │ + MEAI 10.3.0     │
+    │ + MEAI 10.4.1     │
     │                   │  ← Layer 1: Inference transforms
     └───────────────────┘
                          │
@@ -346,7 +346,7 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
     │ MLNet.Audio.DataIngestion                    │  ← Layer 4
     │                                              │
     │ + DataIngestion.Abstractions 10.3.0-preview  │
-    │ + MEAI.Abstractions 10.3.0                   │
+    │ + MEAI.Abstractions 10.4.1                   │
     └──────────────────────────────────────────────┘
 
   NOTE: MLNet.ASR.OnnxGenAI depends on MLNet.Audio.Core directly,
@@ -462,8 +462,8 @@ mlnet-audio-custom-transforms/
 │   │   │   ├── OnnxSpeechT5TtsEstimator.cs
 │   │   │   ├── OnnxSpeechT5TtsTransformer.cs  # Encoder → decoder(KV) → vocoder pipeline
 │   │   │   ├── OnnxSpeechT5Options.cs
-│   │   │   ├── ITextToSpeechClient.cs         # MEAI-style prototype interface
-│   │   │   └── OnnxTextToSpeechClient.cs      # ITextToSpeechClient via SpeechT5
+│   │   │   ├── IOnnxTtsSynthesizer.cs         # Internal interface — abstracts TTS backends
+│   │   │   └── OnnxTextToSpeechClient.cs      # ITextToSpeechClient (official MEAI) — SpeechT5 + KittenTTS
 │   │   ├── MEAI/
 │   │   │   └── OnnxAudioEmbeddingGenerator.cs # IEmbeddingGenerator<AudioData, Embedding<float>>
 │   │   └── Shared/
