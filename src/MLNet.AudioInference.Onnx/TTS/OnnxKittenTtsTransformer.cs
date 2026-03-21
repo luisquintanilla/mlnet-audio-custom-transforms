@@ -36,6 +36,9 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
 
     public bool IsRowToRowMapper => true;
 
+    /// <summary>Gets the names of available voices loaded from voices.npz.</summary>
+    public IReadOnlyCollection<string> AvailableVoices => _voices.Keys;
+
     public OnnxKittenTtsTransformer(MLContext mlContext, OnnxKittenTtsOptions options)
     {
         _mlContext = mlContext;
@@ -61,9 +64,17 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
         voice ??= _options.DefaultVoice;
 
         if (!_voices.TryGetValue(voice, out var voiceEmbeddings))
-            throw new ArgumentException(
-                $"Unknown voice '{voice}'. Available: {string.Join(", ", _voices.Keys)}",
-                nameof(voice));
+        {
+            // Fall back to first available voice if the requested one doesn't exist
+            // (voice names vary by model variant — mini uses Bella/Jasper/Luna, nano uses expr-voice-*)
+            var firstVoice = _voices.Keys.FirstOrDefault()
+                ?? throw new InvalidOperationException("No voices loaded from voices.npz.");
+            Console.Error.WriteLine(
+                $"Warning: voice '{voice}' not found. Using '{firstVoice}'. " +
+                $"Available: {string.Join(", ", _voices.Keys)}");
+            voice = firstVoice;
+            voiceEmbeddings = _voices[voice];
+        }
 
         var chunks = ChunkText(text, _options.MaxChunkLength);
         var allSamples = new List<float>();

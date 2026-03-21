@@ -43,13 +43,22 @@ Console.WriteLine("=== KittenTTS Text-to-Speech — ONNX + espeak-ng ===\n");
 
 // --- Resolve model path ---
 var modelDir = args.Length > 0 ? args[0] : @"models\kittentts";
+// KittenTTS models may be named model.onnx or kitten_tts_*.onnx — auto-detect
 var modelPath = Path.Combine(modelDir, "model.onnx");
+if (!File.Exists(modelPath))
+{
+    var onnxFiles = Directory.Exists(modelDir)
+        ? Directory.GetFiles(modelDir, "*.onnx")
+        : [];
+    if (onnxFiles.Length == 1)
+        modelPath = onnxFiles[0];
+}
 var voicesPath = Path.Combine(modelDir, "voices.npz");
 
 if (!File.Exists(modelPath) || !File.Exists(voicesPath))
 {
     Console.WriteLine($"Model directory: {Path.GetFullPath(modelDir)}");
-    Console.WriteLine($"  model.onnx:  {(File.Exists(modelPath) ? "found" : "MISSING")}");
+    Console.WriteLine($"  *.onnx:      {(File.Exists(modelPath) ? Path.GetFileName(modelPath) : "MISSING")}");
     Console.WriteLine($"  voices.npz:  {(File.Exists(voicesPath) ? "found" : "MISSING")}");
     Console.WriteLine();
     Console.WriteLine("To download the KittenTTS ONNX model:");
@@ -78,13 +87,14 @@ var kittenOptions = new OnnxKittenTtsOptions
 };
 
 using var transformer = new OnnxKittenTtsTransformer(mlContext, kittenOptions);
-Console.WriteLine("KittenTTS model loaded (single ONNX session)\n");
+Console.WriteLine($"KittenTTS model loaded (single ONNX session)");
+Console.WriteLine($"Available voices: {string.Join(", ", transformer.AvailableVoices)}\n");
 
 // --- 1. Basic synthesis ---
 Console.WriteLine("--- 1. Direct Synthesis ---\n");
 
 var text = args.Length > 1 ? args[1] : "Hello, this is a text to speech synthesis test using KittenTTS.";
-var voice = args.Length > 2 ? args[2] : "Jasper";
+var voice = args.Length > 2 ? args[2] : transformer.AvailableVoices.First();
 Console.WriteLine($"  Input: \"{text}\"");
 Console.WriteLine($"  Voice: {voice}");
 
@@ -104,8 +114,8 @@ var metadata = ttsClient.GetService<TextToSpeechClientMetadata>();
 Console.WriteLine($"  Provider: {metadata?.ProviderName}");
 Console.WriteLine($"  Model: {metadata?.DefaultModelId}");
 
-var ttsOptions = new TextToSpeechOptions { VoiceId = "Luna", Speed = 1.0f };
-var response = await ttsClient.GetAudioAsync("This is the MEAI client with Luna voice.", ttsOptions);
+var ttsOptions = new TextToSpeechOptions { VoiceId = transformer.AvailableVoices.Skip(1).FirstOrDefault() ?? voice, Speed = 1.0f };
+var response = await ttsClient.GetAudioAsync("This is the MEAI client.", ttsOptions);
 var audioContent = response.Contents.OfType<DataContent>().FirstOrDefault();
 Console.WriteLine($"  Result: {audioContent?.Data.Length ?? 0} WAV bytes, model={response.ModelId}");
 #pragma warning restore AIEXP001, MEAI001
@@ -113,7 +123,7 @@ Console.WriteLine($"  Result: {audioContent?.Data.Length ?? 0} WAV bytes, model=
 // --- 3. Multiple voices ---
 Console.WriteLine("\n--- 3. Multiple Voices ---\n");
 
-var voiceNames = new[] { "Bella", "Jasper", "Luna", "Bruno" };
+var voiceNames = transformer.AvailableVoices.Take(4).ToArray();
 foreach (var v in voiceNames)
 {
     var sample = transformer.Synthesize("Good morning.", v);
