@@ -43,6 +43,13 @@ Console.WriteLine("=== KittenTTS Text-to-Speech — ONNX + espeak-ng ===\n");
 
 // --- Resolve model path ---
 var modelDir = args.Length > 0 ? args[0] : @"models\kittentts";
+if (!Directory.Exists(modelDir))
+{
+    // Also try relative to project directory (for running from repo root via dotnet run --project)
+    var altDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", modelDir);
+    if (Directory.Exists(altDir))
+        modelDir = altDir;
+}
 // KittenTTS models may be named model.onnx or kitten_tts_*.onnx — auto-detect
 var modelPath = Path.Combine(modelDir, "model.onnx");
 if (!File.Exists(modelPath))
