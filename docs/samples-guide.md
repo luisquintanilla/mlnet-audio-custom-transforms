@@ -211,8 +211,13 @@ Shows 5 patterns: direct synthesis, `ITextToSpeechClient`, ML.NET pipeline, cust
 ### Setup
 
 ```bash
+# Install espeak-ng (required for phonemization)
+# Windows: winget install espeak-ng
+# macOS: brew install espeak-ng
+sudo apt install -y espeak-ng  # Linux/Codespaces
+
 cd samples/KittenTTS
-huggingface-cli download KittenML/kitten-tts-mini-0.8 --include "*.onnx" --local-dir models/kitten-tts-mini
+git clone https://huggingface.co/KittenML/kitten-tts-mini-0.8 models/kittentts
 dotnet run
 ```
 

@@ -50,6 +50,7 @@ ML.NET `IEstimator<T>`/`ITransformer` implementations for all audio tasks.
 | ASR/ | `SpeechToTextClientEstimator`, `SpeechToTextClientTransformer`, `SpeechToTextClientOptions` | Provider-agnostic ASR wrapping any `ISpeechToTextClient` |
 | ASR/ | `OnnxWhisperEstimator`, `OnnxWhisperTransformer`, `OnnxWhisperOptions`, `WhisperKvCacheManager` | Raw ONNX Whisper with manual encoder/decoder/KV cache management |
 | TTS/ | `OnnxSpeechT5TtsEstimator`, `OnnxSpeechT5TtsTransformer`, `OnnxSpeechT5Options` | SpeechT5 text-to-speech: encoder → decoder (KV cache) → vocoder |
+| TTS/ | `OnnxKittenTtsEstimator`, `OnnxKittenTtsTransformer`, `OnnxKittenTtsOptions` | KittenTTS text-to-speech: espeak-ng phonemization → single ONNX model → 24 kHz audio |
 | TTS/ | `OnnxTextToSpeechClient`, `IOnnxTtsSynthesizer` (internal) | Official MEAI `ITextToSpeechClient` — one client for all TTS backends (SpeechT5, KittenTTS) via `IOnnxTtsSynthesizer` |
 | MEAI/ | `OnnxAudioEmbeddingGenerator` | `IEmbeddingGenerator<AudioData, Embedding<float>>` bridge to MEAI |
 | Shared/ | `AudioFeatureExtractionEstimator`, `AudioFeatureExtractionTransformer`, `OnnxAudioScoringEstimator`, `OnnxAudioScoringTransformer`, `EnCodecTokenizer` | Reusable sub-transforms for the composed 3-stage pipeline. Feature extraction (Stage 1) and ONNX scoring (Stage 2) are shared across classification and embeddings |
@@ -62,6 +63,7 @@ mlContext.Transforms.OnnxAudioEmbedding(options)
 mlContext.Transforms.OnnxVad(options)
 mlContext.Transforms.OnnxWhisper(options)
 mlContext.Transforms.SpeechT5Tts(options)
+mlContext.Transforms.KittenTts(options)
 mlContext.Transforms.SpeechToText(client, options)
 ```
 
@@ -91,6 +93,7 @@ Separate package for Whisper speech-to-text via ONNX Runtime GenAI. ORT GenAI ha
 |----------------|---------------|---------|
 | `IEmbeddingGenerator<AudioData, Embedding<float>>` | `OnnxAudioEmbeddingGenerator` | MLNet.AudioInference.Onnx |
 | `ISpeechToTextClient` | `OnnxSpeechToTextClient` | MLNet.ASR.OnnxGenAI |
+| `ISpeechToTextClient` | `OnnxWhisperSpeechToTextClient` | MLNet.AudioInference.Onnx |
 | `ITextToSpeechClient` | `OnnxTextToSpeechClient` | MLNet.AudioInference.Onnx |
 | `IVoiceActivityDetector` (custom) | `OnnxVadTransformer` | MLNet.AudioInference.Onnx |
 
@@ -490,5 +493,6 @@ mlnet-audio-custom-transforms/
     ├── WhisperTranscription/                  # ORT GenAI Whisper (simple)
     ├── WhisperRawOnnx/                        # Raw ONNX Whisper (full control)
     ├── TextToSpeech/                          # SpeechT5 local TTS
+    ├── KittenTTS/                             # KittenTTS lightweight TTS + espeak-ng
     └── AudioDataIngestion/                    # DataIngestion: Read → Chunk → Embed
 ```

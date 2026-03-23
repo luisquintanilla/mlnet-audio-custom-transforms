@@ -13,7 +13,9 @@ A comprehensive reference for every audio transform in the MLNet.Audio project. 
 5. [Speech-to-Text: ORT GenAI (Whisper)](#speech-to-text-ort-genai-whisper)
 6. [Speech-to-Text: Raw ONNX (Whisper)](#speech-to-text-raw-onnx-whisper)
 7. [Text-to-Speech: SpeechT5](#text-to-speech-speecht5)
-8. [Comparison: Three ASR Approaches](#comparison-three-asr-approaches)
+8. [Text-to-Speech: KittenTTS](#text-to-speech-kittentts)
+9. [Comparison: Three ASR Approaches](#comparison-three-asr-approaches)
+10. [Comparison: Two TTS Approaches](#comparison-two-tts-approaches)
 
 ---
 
@@ -777,11 +779,11 @@ text → SentencePiece tokenizer (spm_char.model) → token IDs
 | `OnnxSpeechT5TtsEstimator` | `IEstimator<OnnxSpeechT5TtsTransformer>` — fits the pipeline |
 | `OnnxSpeechT5TtsTransformer` | `ITransformer, IDisposable` — runs inference; exposes `Synthesize` and `SynthesizeBatch` |
 | `OnnxSpeechT5Options` | All configuration properties |
-| `OnnxTextToSpeechClient` | `ITextToSpeechClient` — our prototype MEAI-style client |
-| `ITextToSpeechClient` | Interface: `GetAudioAsync`, `GetStreamingAudioAsync` |
-| `TextToSpeechResponse` | Response containing `AudioData`, `Voice`, `Duration` |
-| `TextToSpeechResponseUpdate` | Streaming chunk with `AudioData` and `IsFinal` flag |
-| `TextToSpeechOptions` | `Voice`, `Speed`, `Language`, `SpeakerEmbedding` |
+| `OnnxTextToSpeechClient` | Official MEAI `ITextToSpeechClient` implementation for local ONNX TTS (accepts SpeechT5 or KittenTTS options) |
+| `ITextToSpeechClient` | MEAI interface: `GetAudioAsync`, `GetStreamingAudioAsync`, `GetService` + `IDisposable` |
+| `TextToSpeechResponse` | Response with `Contents` collection containing `DataContent` with WAV bytes |
+| `TextToSpeechResponseUpdate` | Streaming update with `Kind` (`SessionOpen`, `AudioUpdating`, `AudioUpdated`, `SessionClose`, `Error`) |
+| `TextToSpeechOptions` | `VoiceId`, `Speed`, `Pitch`, `Volume`, `Language`, `AudioFormat`, `ModelId`, `AdditionalProperties` |
 
 ### Options (`OnnxSpeechT5Options`)
 
@@ -873,37 +875,33 @@ var model = pipeline.Fit(data);
 var results = model.Transform(data);
 ```
 
-**`ITextToSpeechClient` — our prototype interface:**
+**`ITextToSpeechClient` — official MEAI interface (10.4.1):**
 
 ```csharp
-ITextToSpeechClient client = new OnnxTextToSpeechClient(new OnnxSpeechT5Options
+using var client = new OnnxTextToSpeechClient(new OnnxSpeechT5Options
 {
     EncoderModelPath = "models/speecht5/encoder_model.onnx",
     DecoderModelPath = "models/speecht5/decoder_model_merged.onnx",
     VocoderModelPath = "models/speecht5/decoder_postnet_and_vocoder.onnx"
 });
 
-// Simple generation
-TextToSpeechResponse response = await client.GetAudioAsync("Hello, world!");
-AudioIO.SaveWav("output.wav", response.Audio);
-Console.WriteLine($"Duration: {response.Duration.TotalSeconds:F1}s");
+// Simple generation — audio returned as DataContent with WAV bytes
+var response = await client.GetAudioAsync("Hello, world!");
+var audioContent = response.Contents.OfType<DataContent>().First();
+File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
 
-// With options
-TextToSpeechResponse response = await client.GetAudioAsync("Hello!", new TextToSpeechOptions
+// With options — use VoiceId (not Voice) and AdditionalProperties for speaker embedding
+var response = await client.GetAudioAsync("Hello!", new TextToSpeechOptions
 {
-    Voice = "default",
+    VoiceId = "default",
     Speed = 1.0f,
     Language = "en",
-    SpeakerEmbedding = customSpeakerVector
+    AdditionalProperties = new() { ["speakerEmbedding"] = customSpeakerVector }
 });
 
-// Streaming generation
-await foreach (var update in client.GetStreamingAudioAsync("A longer piece of text..."))
-{
-    ProcessAudioChunk(update.Audio);
-    if (update.IsFinal)
-        Console.WriteLine("Done!");
-}
+// Provider metadata via GetService
+var metadata = client.GetService<TextToSpeechClientMetadata>();
+Console.WriteLine($"Provider: {metadata?.ProviderName}, Model: {metadata?.DefaultModelId}");
 ```
 
 ### Supported Models
@@ -911,6 +909,170 @@ await foreach (var update in client.GetStreamingAudioAsync("A longer piece of te
 | Model | Description |
 |-------|-------------|
 | **SpeechT5** (`microsoft/speecht5_tts`) | Microsoft's unified speech model. Export from HuggingFace with Optimum. |
+
+---
+
+## Text-to-Speech: KittenTTS
+
+### What It Does
+
+Generates speech audio from text using **KittenTTS** — a lightweight, single-model TTS engine that uses espeak-ng for phonemization. Unlike SpeechT5's 3-model pipeline (encoder → decoder → vocoder), KittenTTS runs a single forward pass through one ONNX model. It supports 8 built-in voices and produces 24 kHz audio.
+
+### When To Use It
+
+- **Lightweight local TTS** — smallest model is just ~41 MB (vs SpeechT5's ~643 MB total).
+- **Fast inference** — single forward pass, no autoregressive decoding loop.
+- **Named voices** — choose from 8 built-in voices by name (Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo).
+- **MEAI integration** — same `ITextToSpeechClient` interface as SpeechT5, swap backends without changing code.
+
+### Architecture
+
+```
+text → text chunking (max 400 chars, sentence boundaries)
+     → espeak-ng subprocess (text → IPA phonemes with stress marks)
+     → TextCleaner (176-symbol table: IPA chars → integer token IDs)
+     → Single ONNX model (token IDs + voice embedding + speed → raw waveform)
+     → Trim trailing samples → concatenate chunks → AudioData at 24 kHz
+```
+
+**Key difference from SpeechT5:** KittenTTS is NOT autoregressive. There's no decoder loop, no KV cache, no stop-probability check. The model takes the full token sequence and produces the full waveform in one pass. This makes it simpler and faster, but less flexible for very long text (handled via chunking).
+
+### Key Types
+
+| Type | Role |
+|------|------|
+| `OnnxKittenTtsEstimator` | `IEstimator<OnnxKittenTtsTransformer>` — fits the pipeline |
+| `OnnxKittenTtsTransformer` | `ITransformer, IOnnxTtsSynthesizer, IDisposable` — runs inference; exposes `Synthesize`, `AvailableVoices` |
+| `OnnxKittenTtsOptions` | All configuration properties |
+| `OnnxTextToSpeechClient` | Official MEAI `ITextToSpeechClient` — accepts `OnnxKittenTtsOptions` (or `OnnxSpeechT5Options`) |
+
+### Options (`OnnxKittenTtsOptions`)
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `ModelPath` | `string` | *(required)* | Path to KittenTTS ONNX model file |
+| `VoicesPath` | `string?` | `null` | Path to `voices.npz`; `null` = look in model directory |
+| `EspeakPath` | `string?` | `null` | Path to espeak-ng executable; `null` = auto-detect from PATH |
+| `DefaultVoice` | `string` | `"Jasper"` | Default voice name for synthesis |
+| `DefaultSpeed` | `float` | `1.0f` | Default speech speed multiplier |
+| `SampleRate` | `int` | `24000` | Output audio sample rate (KittenTTS standard) |
+| `MaxChunkLength` | `int` | `400` | Maximum characters per text chunk |
+| `TrimEndSamples` | `int` | `5000` | Samples to trim from end of generated audio |
+| `InputColumnName` | `string` | `"Text"` | Input column containing text to synthesize |
+| `OutputColumnName` | `string` | `"Audio"` | Output column for generated audio samples (`float[]`) |
+
+### Required Model Files
+
+| File | Description |
+|------|-------------|
+| `model.onnx` (or variant-specific name) | Single-pass TTS model |
+| `voices.npz` | NumPy compressed archive with 8 voice embeddings |
+
+### External Dependency
+
+**espeak-ng** is required for phonemization (converting text to IPA phonemes):
+- Windows: `winget install espeak-ng`
+- Linux: `apt install espeak-ng`
+- macOS: `brew install espeak-ng`
+
+### Code Examples
+
+**Direct API — synthesize speech:**
+
+```csharp
+var mlContext = new MLContext();
+
+var options = new OnnxKittenTtsOptions
+{
+    ModelPath = "models/kittentts/model.onnx"
+};
+
+var estimator = mlContext.Transforms.KittenTts(options);
+var transformer = estimator.Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<TextInput>()));
+
+// Synthesize with default voice (Jasper)
+AudioData audio = transformer.Synthesize("Hello, this is KittenTTS!");
+AudioIO.SaveWav("output.wav", audio);
+
+// Synthesize with a specific voice and speed
+AudioData audio2 = transformer.Synthesize("Different voice!", "Luna", speed: 1.2f);
+AudioIO.SaveWav("output_luna.wav", audio2);
+
+// List available voices
+Console.WriteLine($"Voices: {string.Join(", ", transformer.AvailableVoices)}");
+```
+
+**`ITextToSpeechClient` — official MEAI interface:**
+
+```csharp
+using var client = new OnnxTextToSpeechClient(new OnnxKittenTtsOptions
+{
+    ModelPath = "models/kittentts/model.onnx"
+});
+
+// Same interface as SpeechT5 — swap backends without changing calling code
+var response = await client.GetAudioAsync("Hello from KittenTTS!", new TextToSpeechOptions
+{
+    VoiceId = "Luna",
+    Speed = 1.0f
+});
+
+var audioContent = response.Contents.OfType<DataContent>().First();
+File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
+```
+
+**ML.NET pipeline:**
+
+```csharp
+var pipeline = mlContext.Transforms.KittenTts(new OnnxKittenTtsOptions
+{
+    ModelPath = "models/kittentts/model.onnx"
+});
+
+var data = mlContext.Data.LoadFromEnumerable(new[]
+{
+    new TextInput { Text = "Hello world" },
+    new TextInput { Text = "Goodbye world" }
+});
+
+var model = pipeline.Fit(data);
+var results = model.Transform(data);
+```
+
+### Supported Models
+
+| Model | Params | Size | HuggingFace |
+|-------|--------|------|-------------|
+| KittenTTS Mini | 80M | ~80 MB | `KittenML/kitten-tts-mini-0.8` |
+| KittenTTS Micro | 40M | ~41 MB | `KittenML/kitten-tts-micro-0.8` |
+| KittenTTS Nano | 15M | ~56 MB | `KittenML/kitten-tts-nano-0.8` |
+
+---
+
+## Comparison: Two TTS Approaches
+
+| Aspect | SpeechT5 | KittenTTS |
+|--------|----------|-----------|
+| **Entry point** | `mlContext.Transforms.SpeechT5Tts(options)` | `mlContext.Transforms.KittenTts(options)` |
+| **ONNX models** | 3 (encoder + decoder + vocoder, ~643 MB) | 1 (single-pass, 41–80 MB) |
+| **Decoding** | Autoregressive with KV cache | Single forward pass |
+| **Tokenization** | SentencePiece (character-level) | espeak-ng IPA phonemes → token IDs |
+| **Voice mechanism** | Speaker embedding (`.npy`, 512-dim x-vector) | Named voices from `voices.npz` (8 built-in) |
+| **Voice cloning** | ✅ Load any x-vector `.npy` | ❌ Fixed voice set |
+| **Output sample rate** | 16 kHz | 24 kHz |
+| **External deps** | None | espeak-ng (phonemization) |
+| **MEAI client** | `OnnxTextToSpeechClient(speechT5Options)` | `OnnxTextToSpeechClient(kittenOptions)` |
+| **Best for** | Highest quality, voice cloning, research | Lightweight, fast, simple deployment |
+
+### Decision Flowchart
+
+```
+Need local TTS?
+  ├─ Need voice cloning or custom speakers? → SpeechT5
+  ├─ Need smallest model size? → KittenTTS (Nano: ~56 MB)
+  ├─ Need highest audio quality? → SpeechT5 (or KittenTTS Mini)
+  └─ Need simplest setup with named voices? → KittenTTS
+```
 
 ---
 

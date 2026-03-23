@@ -38,16 +38,17 @@ Want to extend the framework:
 | Voice Activity Detection | `OnnxVad` | `IVoiceActivityDetector` | `samples/VoiceActivityDetection` |
 | Speech-to-Text (Provider) | `SpeechToText` | `ISpeechToTextClient` | `samples/SpeechToText` |
 | Speech-to-Text (ORT GenAI) | `OnnxSpeechToText` | `ISpeechToTextClient` | `samples/WhisperTranscription` |
-| Speech-to-Text (Raw ONNX) | `OnnxWhisper` | — | `samples/WhisperRawOnnx` |
+| Speech-to-Text (Raw ONNX) | `OnnxWhisper` | `ISpeechToTextClient` | `samples/WhisperRawOnnx` |
 | Text-to-Speech (SpeechT5) | `SpeechT5Tts` | `ITextToSpeechClient` | `samples/TextToSpeech` |
+| Text-to-Speech (KittenTTS) | `KittenTts` | `ITextToSpeechClient` | `samples/KittenTTS` |
 | Audio DataIngestion | `AudioDocumentReader` / `AudioSegmentChunker` / `AudioEmbeddingChunkProcessor` | `IEmbeddingGenerator` | `samples/AudioDataIngestion` |
 
 ### Project Status
 
 ✅ 7 audio tasks implemented
 ✅ 5 source packages (Audio.Core, Audio.Tokenizers, AudioInference.Onnx, ASR.OnnxGenAI, Audio.DataIngestion)
-✅ 8 runnable samples
-✅ MEAI integration (IEmbeddingGenerator, ISpeechToTextClient, ITextToSpeechClient prototype)
+✅ 9 runnable samples
+✅ MEAI integration (IEmbeddingGenerator, ISpeechToTextClient, ITextToSpeechClient)
 ✅ Microsoft.Extensions.DataIngestion integration (Reader → Chunker → Processor for audio)
 ✅ Microsoft.ML.Tokenizers (SentencePiece for SpeechT5 via Audio.Tokenizers, custom WhisperTokenizer)
 ✅ System.Numerics.Tensors / TensorPrimitives throughout

@@ -476,7 +476,8 @@ KittenTTS is a lightweight TTS model that uses espeak-ng for phonemization inste
 **Download:**
 
 ```bash
-huggingface-cli download KittenML/kitten-tts-mini-0.8 --include "*.onnx" --local-dir models/kitten-tts-mini
+# Clone gets all files: model.onnx + voices.npz
+git clone https://huggingface.co/KittenML/kitten-tts-mini-0.8 models/kittentts
 ```
 
 **Available models:**
@@ -499,7 +500,7 @@ using MLNet.AudioInference.Onnx;
 var options = new OnnxKittenTtsOptions
 {
     ModelPath = @"models\kitten-tts-mini\model.onnx",
-    Voice = "Bella",
+    DefaultVoice = "Bella",
     SampleRate = 24000
 };
 
@@ -567,8 +568,9 @@ samples/
 │
 ├── KittenTTS/
 │   └── models/
-│       └── kitten-tts-mini/
-│           └── model.onnx
+│       └── kittentts/
+│           ├── model.onnx            # or kitten_tts_nano_v0_8.onnx (varies by variant)
+│           └── voices.npz            # Voice embeddings (8 voices)
 │
 └── SpeechToText/                 (Provider-agnostic — uses any ISpeechToTextClient)
     └── (no local models needed)

@@ -100,6 +100,12 @@ var pipeline = mlContext.Transforms.SpeechT5Tts(new OnnxSpeechT5Options
     DecoderModelPath = "models/speecht5/decoder_model_merged.onnx",
     VocoderModelPath = "models/speecht5/decoder_postnet_and_vocoder.onnx",
 });
+
+// --- Text-to-Speech (KittenTTS — lightweight single-model) ---
+var pipeline = mlContext.Transforms.KittenTts(new OnnxKittenTtsOptions
+{
+    ModelPath = "models/kittentts/model.onnx"
+});
 ```
 
 ## MEAI Integration
@@ -219,7 +225,7 @@ Three-stage pipeline pattern mirroring the text transform architecture. See [Arc
 ## Getting Started
 
 ### Codespaces / DevContainer
-Open in GitHub Codespaces for a pre-configured environment with .NET 10, Python (for model downloads), and C# Dev Kit.
+Open in GitHub Codespaces for a pre-configured environment with .NET 10, Python, huggingface-cli (for model downloads), espeak-ng (for KittenTTS phonemization), and C# Dev Kit.
 
 ### NuGet Packages
 Published to [GitHub Packages](https://github.com/luisquintanilla?tab=packages&repo_name=mlnet-audio-custom-transforms):
