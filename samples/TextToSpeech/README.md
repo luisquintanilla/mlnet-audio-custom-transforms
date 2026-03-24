@@ -361,7 +361,7 @@ git clone https://huggingface.co/NeuML/txtai-speecht5-onnx models/speecht5
 
 ### Output sounds garbled or robotic
 - Verify all three ONNX files downloaded completely (check file sizes above)
-- Ensure `spm_char.model` is present — without the tokenizer, text encoding fails silently
+- Ensure `spm_char.model` is present — if the tokenizer file is missing, SpeechT5 will throw a file-not-found exception when loading
 - Very long text may accumulate decoder errors. Try shorter sentences first
 - The stop threshold (0.5) may cause early cutoff for some voices — try lowering to 0.3
 

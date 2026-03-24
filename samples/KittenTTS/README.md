@@ -110,7 +110,7 @@ This layered design isn't accidental — each layer aligns with a real .NET ecos
 - **Composability** — `TtsSentenceChunker` and `EspeakPhonemizationProcessor` implement MEDI's `IngestionChunker<string>` and `IngestionChunkProcessor<string>`. They can be used independently or plugged into any pipeline that works with MEDI abstractions.
 - **Ecosystem alignment** — the same `IngestionChunker<string>` abstraction that chunks documents for text RAG also chunks text for TTS. If you've used MEDI for search indexing, the chunking model is already familiar.
 - **Swappability** — the transformer constructor accepts any `Microsoft.ML.Tokenizers.Tokenizer` via `options.Tokenizer`. Want a custom IPA tokenizer with a different symbol set? Provide it — the pipeline doesn't care.
-- **Token-aware chunking** — instead of splitting at a fixed character count, `TtsSentenceChunker` accepts a `Func<string, int> measureLength` parameter. KittenTTS passes `tokenizer.CountTokens`, so chunks are measured in *tokens*, not characters. This matters because IPA symbols like `oʊ` are two Unicode characters but one token.
+- **Token-aware chunking** — instead of splitting at a fixed character count, `TtsSentenceChunker` accepts a `Func<string, int> measureLength` parameter. KittenTTS passes `tokenizer.CountTokens`, so chunk sizes reflect what the model actually sees — unknown characters (those outside the 176-symbol IPA vocabulary) are silently skipped and don't count toward the limit, giving a more accurate measure than raw `string.Length`.
 
 Here's how the transformer wires these layers together:
 
@@ -292,7 +292,7 @@ Without a model, the sample prints download instructions and API pattern example
 - **English only** — KittenTTS is trained on English speech data. Other languages will produce garbled output or errors from espeak-ng phonemization.
 - **Fixed voice set** — unlike SpeechT5 which supports custom speaker embeddings for voice cloning, KittenTTS only supports its 8 built-in voices.
 - **Requires espeak-ng** — the external `espeak-ng` tool must be installed and on PATH for phonemization. This is an extra setup step compared to SpeechT5 which handles tokenization internally.
-- **Chunk boundary artifacts** — very long text is split into token-based chunks (default 400 tokens). Audio quality may degrade slightly at chunk boundaries.
+- **Chunk boundary artifacts** — very long text is split into chunks for processing. By default, the chunk limit is 400 (via `MaxChunkLength` for backward compatibility). The chunker measures length using `tokenizer.CountTokens`, which for KittenTTS's character-level tokenizer is close to character count but skips unknown symbols. To set an explicit token-based limit, use `MaxTokensPerChunk` in `OnnxKittenTtsOptions`. Audio quality may degrade slightly at chunk boundaries.
 - **Model variant differences** — voice names and ONNX filenames differ between model sizes (mini/micro/nano). The transformer auto-detects and falls back gracefully, but the mini model's voice names (Bella, Jasper, etc.) are the canonical ones.
 - **No streaming** — the ONNX model generates the full waveform in one pass. There's no incremental audio output during generation.
 

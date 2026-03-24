@@ -326,11 +326,16 @@ huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX
 - Mixed audio (speech over music) may split confidence across multiple labels — this is expected behavior, not an error
 
 ### GPU vs CPU
-The `samples/Directory.Build.props` auto-detects CUDA. If you have a GPU but want CPU inference:
+The `samples/Directory.Build.props` auto-detects CUDA at build/restore time. If you have a GPU but want CPU-only inference, unset the `CUDA_PATH` environment variable before building:
 ```bash
-dotnet run -- "models/ast" "test.wav" --no-gpu
+# PowerShell
+Remove-Item Env:CUDA_PATH -ErrorAction SilentlyContinue
+dotnet run -- "models/ast" "test.wav"
+
+# Bash
+unset CUDA_PATH
+dotnet run -- "models/ast" "test.wav"
 ```
-Or unset the `CUDA_PATH` environment variable before running.
 
 ---
 

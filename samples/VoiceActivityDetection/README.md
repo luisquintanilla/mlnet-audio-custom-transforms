@@ -66,7 +66,10 @@ var segments = vadTransformer.DetectSpeech(audio);
 // Step 2: Transcribe only the speech segments (skip silence)
 foreach (var segment in segments)
 {
-    var speechAudio = audio.Slice(segment.Start, segment.End);
+    // Convert segment timestamps to sample indices
+    var startSample = (int)(segment.Start * audio.SampleRate);
+    var endSample = Math.Min((int)(segment.End * audio.SampleRate), audio.Samples.Length);
+    var speechAudio = new AudioData(audio.Samples[startSample..endSample], audio.SampleRate);
     var text = whisperTransformer.Transcribe(speechAudio);
 }
 ```
