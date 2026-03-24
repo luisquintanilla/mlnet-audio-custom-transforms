@@ -1,3 +1,5 @@
+using Microsoft.ML.Tokenizers;
+
 namespace MLNet.AudioInference.Onnx;
 
 /// <summary>
@@ -39,7 +41,14 @@ public class OnnxKittenTtsOptions
     public int SampleRate { get; set; } = 24000;
 
     /// <summary>Maximum characters per text chunk for synthesis. Default: 400.</summary>
+    [Obsolete("Use MaxTokensPerChunk with a Tokenizer for token-aware chunking.")]
     public int MaxChunkLength { get; set; } = 400;
+
+    /// <summary>Optional tokenizer for IPA symbol encoding. Defaults to KittenTtsTokenizer when not specified.</summary>
+    public Tokenizer? Tokenizer { get; set; }
+
+    /// <summary>Maximum tokens per chunk when using token-aware chunking. Used when a Tokenizer is available.</summary>
+    public int MaxTokensPerChunk { get; set; } = 400;
 
     /// <summary>Number of samples to trim from end of generated audio. Default: 5000.</summary>
     public int TrimEndSamples { get; set; } = 5000;
