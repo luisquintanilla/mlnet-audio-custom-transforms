@@ -257,20 +257,47 @@ models/whisper-base/
 
 The `decoder_model_merged.onnx` is key — it's a single model that handles both the initial full-computation step and subsequent incremental steps via the `use_cache_branch` input.
 
-### 3. Run
+---
+
+## Running It
+
+### With model files (full transcription)
 
 ```bash
-# With model directory
+cd samples/WhisperRawOnnx
+
+# Default: uses models/whisper-base directory
 dotnet run -- "models/whisper-base"
 
-# With model directory and specific audio file
-dotnet run -- "models/whisper-base" "audio.wav"
+# With a specific audio file
+dotnet run -- "models/whisper-base" "path/to/audio.wav"
+```
 
-# Without models (shows API patterns as fallback)
+### Without model files (pattern demonstration)
+
+```bash
+cd samples/WhisperRawOnnx
 dotnet run
 ```
 
-The sample gracefully handles missing models by displaying the API patterns instead.
+Shows API patterns for all three ASR approaches and generates a synthetic mel spectrogram to demonstrate feature extraction — no model download required.
+
+### Exporting the Model
+
+Raw ONNX Whisper requires encoder and decoder models exported via [Optimum](https://huggingface.co/docs/optimum):
+
+```bash
+pip install optimum[onnxruntime]
+optimum-cli export onnx --model openai/whisper-base models/whisper-base/
+```
+
+This creates:
+| File | Purpose | Size |
+|------|---------|------|
+| `encoder_model.onnx` | Audio features → hidden states | ~90 MB |
+| `decoder_model_merged.onnx` | Autoregressive token generation | ~180 MB |
+| `config.json` | Model configuration | <1 KB |
+| `tokenizer.json` | BPE vocabulary + special tokens | ~2 MB |
 
 ---
 
@@ -365,6 +392,40 @@ var pipeline = mlContext.Transforms.OnnxWhisper(rawOnnxOptions);
 4. **Raw ONNX gives full control but requires understanding the decoder loop.** You manage the KV cache, choose the sampling strategy, and process the token stream. This is more work than ORT GenAI but gives you complete visibility and customizability.
 
 5. **All three ASR approaches are available in this repo.** Provider-agnostic for cloud APIs, ORT GenAI for easy local inference, and raw ONNX for full control — choose based on your needs.
+
+---
+
+## Troubleshooting
+
+### "ONNX model not found" error
+Raw ONNX Whisper requires models exported via Optimum (not the standard HuggingFace format). The model directory must contain both `encoder_model.onnx` and `decoder_model_merged.onnx`.
+
+### Transcription is empty or just special tokens
+- The decoder may be generating only `<|endoftext|>` immediately. This usually means:
+  - Audio is silence or too quiet (try a real speech recording)
+  - The mel spectrogram is all zeros (check audio loading)
+  - Model files are corrupted (re-export with Optimum)
+
+### Transcription contains repeated words
+This is a known issue with greedy decoding in small Whisper models. Try:
+- Use temperature sampling: higher temperature (0.5-0.8) reduces repetition
+- Use a larger model (whisper-small or whisper-medium)
+- The KV cache ensures efficient decoding but doesn't prevent repetition — that's a model behavior
+
+### "KV cache dimension mismatch" or shape errors
+- The `WhisperKvCacheManager` auto-detects dimensions from the ONNX model metadata
+- If you exported with a different tool (not Optimum), the cache tensor names may differ
+- Ensure `decoder_model_merged.onnx` contains both the initial (no-past) and with-past paths
+
+### When should I use this vs ORT GenAI vs cloud API?
+
+| Approach | Use When |
+|----------|----------|
+| **Cloud API** (Azure, OpenAI) | Production; highest accuracy; don't want to manage models |
+| **ORT GenAI** ([WhisperTranscription](../WhisperTranscription/)) | Local inference with simple API; "just works" |
+| **Raw ONNX** (this sample) | Learning how Whisper works; custom sampling strategies; debugging; non-standard models |
+
+This sample is the **educational deep-dive**. If you just want transcription, start with [WhisperTranscription](../WhisperTranscription/).
 
 ---
 

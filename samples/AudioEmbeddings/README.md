@@ -15,6 +15,30 @@ This sample demonstrates how to generate **vector embeddings** from audio using 
 
 ---
 
+## Where This Fits in the Architecture
+
+Audio embeddings sit at the **intersection of three abstraction layers**:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Layer 3: DataIngestion                                    │
+│   AudioEmbeddingChunkProcessor uses embeddings for RAG   │
+├─────────────────────────────────────────────────────────┤
+│ Layer 2: MEAI (Microsoft.Extensions.AI)                  │
+│   IEmbeddingGenerator<AudioData, Embedding<float>>       │
+├─────────────────────────────────────────────────────────┤
+│ Layer 1: ML.NET Pipeline (3-stage decomposition)         │
+│   Feature Extraction → ONNX Scoring → Embedding Pooling  │
+├─────────────────────────────────────────────────────────┤
+│ Layer 0: Audio Primitives                                 │
+│   AudioData, MelSpectrogramExtractor, AudioIO            │
+└─────────────────────────────────────────────────────────┘
+```
+
+This sample demonstrates Layers 0-2. The [AudioDataIngestion](../AudioDataIngestion/) sample shows how Layer 3 builds on top of these embeddings for full RAG pipelines.
+
+---
+
 ## The Concept: Audio Embeddings
 
 ### What Is an Embedding?
@@ -311,6 +335,31 @@ Because `OnnxAudioEmbeddingGenerator` implements `IDisposable`, the `using` decl
 3. **`TensorPrimitives` provides SIMD-accelerated math primitives** — use `TensorPrimitives.CosineSimilarity`, `TensorPrimitives.Dot`, `TensorPrimitives.Normalize`, etc. instead of hand-rolling vector math. They're faster and correct.
 
 4. **MEAI makes the embedding generator pluggable and DI-friendly** — wrapping in `IEmbeddingGenerator<AudioData, Embedding<float>>` means you can swap providers, add middleware (caching, logging, rate-limiting), and inject the generator wherever it's needed — all without changing consuming code.
+
+---
+
+## Troubleshooting
+
+### "Model not found" — synthetic demo runs instead
+This is expected behavior. Without a CLAP model, the sample demonstrates AudioData primitives and mel spectrogram extraction. To run with real embeddings:
+```bash
+huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap
+```
+
+### All embeddings look the same (high cosine similarity)
+- Ensure test audio files are genuinely different (e.g., speech vs music vs silence)
+- Very short audio (<1s) may not give the model enough information to discriminate
+- Check pooling strategy — `MeanPooling` averages across all frames; `ClsToken` uses just the first frame's representation
+
+### Embedding dimension doesn't match expected
+Different models produce different embedding sizes:
+- CLAP: 512 dimensions
+- Wav2Vec2: 768 dimensions
+- HuBERT: 768 or 1024 dimensions
+The `OnnxAudioEmbeddingTransformer` auto-detects the hidden dimension from the ONNX model's output shape.
+
+### GPU out of memory
+Audio embeddings require less memory than training, but large batches can still OOM. Process one file at a time or reduce audio duration. The `samples/Directory.Build.props` auto-detects CUDA — unset `CUDA_PATH` to force CPU.
 
 ---
 

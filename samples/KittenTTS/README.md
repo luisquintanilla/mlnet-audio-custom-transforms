@@ -16,7 +16,8 @@ KittenTTS takes a fundamentally different approach from SpeechT5:
 | Aspect | SpeechT5 | KittenTTS |
 |--------|----------|-----------|
 | ONNX models | 3 (encoder + decoder + vocoder) | 1 (single-pass) |
-| Tokenization | SentencePiece (character-level) | espeak-ng IPA phonemes → token IDs |
+| Tokenization | SentencePiece (character-level) | KittenTtsTokenizer (ML.Tokenizers) — 176-symbol IPA vocabulary |
+| Text processing | Built-in encoder | MEDI pipeline: TtsSentenceChunker → EspeakPhonemizationProcessor |
 | Decoding | Autoregressive with KV cache | Single forward pass |
 | Voice mechanism | External speaker embedding (float[]) | NPZ voice archive with named voices |
 | Output sample rate | 16 kHz | 24 kHz |
@@ -26,11 +27,14 @@ KittenTTS takes a fundamentally different approach from SpeechT5:
 
 ```
 "Hello world!"
-    ↓ Text chunking (max 400 chars, sentence boundaries)
-    ↓ Phonemization via espeak-ng (IPA with stress marks)
-    ↓ TextCleaner (IPA symbols → integer token IDs)
-    ↓ Single ONNX model (token IDs + voice embedding + speed → waveform)
-    ↓ Trim trailing samples, concatenate chunks
+    ↓ TtsSentenceChunker (MEDI IngestionChunker<string>)
+    │   Splits at sentence boundaries [.!?], token-aware sizing
+    ↓ EspeakPhonemizationProcessor (MEDI IngestionChunkProcessor<string>)
+    │   English text → IPA phonemes via espeak-ng subprocess
+    ↓ KittenTtsTokenizer (Microsoft.ML.Tokenizers.Tokenizer)
+    │   IPA characters → integer token IDs (176-symbol vocabulary)
+    ↓ Single ONNX model
+    │   Token IDs + voice embedding + speed → raw PCM waveform
     → AudioData at 24 kHz
 ```
 
@@ -39,6 +43,78 @@ KittenTTS takes a fundamentally different approach from SpeechT5:
 KittenTTS ships with **8 built-in voices**: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo.
 
 Voice embeddings are stored in `voices.npz` (a NumPy compressed ZIP archive). The transformer reads this file natively using a built-in NPZ/NPY parser — no Python required.
+
+### Understanding Phonemes and IPA
+
+If you've ever noticed that "read" (present) and "read" (past) are spelled identically but sound different, you've discovered why TTS models can't just feed raw text to a neural network. English spelling is famously inconsistent:
+
+| Word pair | Same spelling? | Same sound? |
+|-----------|---------------|-------------|
+| read (present) / read (past) | ✅ | ❌ (/ɹiːd/ vs /ɹɛd/) |
+| lead (verb) / lead (noun) | ✅ | ❌ (/liːd/ vs /lɛd/) |
+| through / though / thought | Similar | ❌ (all different vowels) |
+
+**Phonemes** are the actual sounds of speech — the building blocks that distinguish one word from another. The **International Phonetic Alphabet (IPA)** provides a universal notation where each symbol maps to exactly one sound, regardless of language or spelling.
+
+For example, "Hello world" becomes:
+
+```
+"Hello world" → /həˈloʊ wɜːld/
+
+h  → voiceless glottal fricative (the breathy "h")
+ə  → schwa (unstressed vowel, like "a" in "about")
+ˈ  → primary stress marker (next syllable is emphasized)
+l  → lateral approximant (tongue touches roof of mouth)
+oʊ → diphthong (the "oh" sound glides from o to ʊ)
+w  → labial-velar approximant (the "w" sound)
+ɜː → open-mid central vowel (the "ur" in "world")
+l  → lateral approximant again
+d  → voiced alveolar plosive (the "d" sound)
+```
+
+**espeak-ng** is the industry-standard open-source phonemizer. It handles all the ambiguities of English spelling — stress placement, silent letters, irregular pronunciations — and produces clean IPA output.
+
+KittenTTS uses **176 IPA symbols** in its vocabulary: 1 pad symbol, 11 punctuation marks, 52 ASCII letters, and 112 IPA extension characters. Each IPA character maps to exactly one integer token ID via `KittenTtsTokenizer`.
+
+> **How is this different from SpeechT5?** SpeechT5 uses SentencePiece character-level tokenization — it feeds raw letters to the model and lets the encoder learn pronunciation implicitly. KittenTTS makes pronunciation *explicit* via phonemization, which gives the model cleaner input at the cost of requiring espeak-ng as an external dependency.
+
+### How the Abstraction Layers Compose
+
+KittenTTS is built from four layers, each using standard .NET abstractions:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Layer 3: Microsoft.Extensions.DataIngestion (MEDI)      │
+│   TtsSentenceChunker → EspeakPhonemizationProcessor     │
+├─────────────────────────────────────────────────────────┤
+│ Layer 2: Microsoft.ML.Tokenizers                        │
+│   KittenTtsTokenizer (Tokenizer base class)             │
+├─────────────────────────────────────────────────────────┤
+│ Layer 1: ML.NET Custom Transforms                       │
+│   OnnxKittenTtsTransformer (ITransformer)               │
+├─────────────────────────────────────────────────────────┤
+│ Layer 0: ONNX Runtime                                   │
+│   Single-pass neural network inference                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+This layered design isn't accidental — each layer aligns with a real .NET ecosystem abstraction:
+
+- **Composability** — `TtsSentenceChunker` and `EspeakPhonemizationProcessor` implement MEDI's `IngestionChunker<string>` and `IngestionChunkProcessor<string>`. They can be used independently or plugged into any pipeline that works with MEDI abstractions.
+- **Ecosystem alignment** — the same `IngestionChunker<string>` abstraction that chunks documents for text RAG also chunks text for TTS. If you've used MEDI for search indexing, the chunking model is already familiar.
+- **Swappability** — the transformer constructor accepts any `Microsoft.ML.Tokenizers.Tokenizer` via `options.Tokenizer`. Want a custom IPA tokenizer with a different symbol set? Provide it — the pipeline doesn't care.
+- **Token-aware chunking** — instead of splitting at a fixed character count, `TtsSentenceChunker` accepts a `Func<string, int> measureLength` parameter. KittenTTS passes `tokenizer.CountTokens`, so chunks are measured in *tokens*, not characters. This matters because IPA symbols like `oʊ` are two Unicode characters but one token.
+
+Here's how the transformer wires these layers together:
+
+```csharp
+// In OnnxKittenTtsTransformer constructor:
+_tokenizer = options.Tokenizer ?? KittenTtsTokenizer.Create();
+_phonemizer = new EspeakPhonemizationProcessor(options.EspeakPath);
+_chunker = new TtsSentenceChunker(
+    maxLengthPerChunk: options.MaxTokensPerChunk ?? options.MaxChunkLength,
+    measureLength: s => _tokenizer.CountTokens(s));
+```
 
 ## About KittenTTS
 
@@ -53,7 +129,7 @@ Traditional TTS (like SpeechT5) works in stages:
 2. Decode hidden states → mel spectrogram (one frame at a time, autoregressively)
 3. Vocoder converts mel → PCM waveform
 
-KittenTTS collapses all of this into **one model** that takes phoneme token IDs and outputs raw audio directly. The trade-off: it's simpler and faster, but has a fixed maximum input length (handled via chunking at 400 characters).
+KittenTTS collapses all of this into **one model** that takes phoneme token IDs and outputs raw audio directly. The trade-off: it's simpler and faster, but has a fixed maximum input length (handled via token-aware chunking using Microsoft.Extensions.DataIngestion's `IngestionChunker` abstraction).
 
 ### What Problems It Solves
 
@@ -209,7 +285,7 @@ Without a model, the sample prints download instructions and API pattern example
 - **English only** — KittenTTS is trained on English speech data. Other languages will produce garbled output or errors from espeak-ng phonemization.
 - **Fixed voice set** — unlike SpeechT5 which supports custom speaker embeddings for voice cloning, KittenTTS only supports its 8 built-in voices.
 - **Requires espeak-ng** — the external `espeak-ng` tool must be installed and on PATH for phonemization. This is an extra setup step compared to SpeechT5 which handles tokenization internally.
-- **Chunk boundary artifacts** — very long text is split into 400-character chunks. Audio quality may degrade slightly at chunk boundaries.
+- **Chunk boundary artifacts** — very long text is split into token-based chunks (default 400 tokens). Audio quality may degrade slightly at chunk boundaries.
 - **Model variant differences** — voice names and ONNX filenames differ between model sizes (mini/micro/nano). The transformer auto-detects and falls back gracefully, but the mini model's voice names (Bella, Jasper, etc.) are the canonical ones.
 - **No streaming** — the ONNX model generates the full waveform in one pass. There's no incremental audio output during generation.
 
@@ -264,5 +340,7 @@ dotnet run --project samples/KittenTTS -- "C:\full\path\to\models\kittentts"
 |---|---|
 | [`samples/TextToSpeech`](../TextToSpeech/) | SpeechT5 TTS — 3-model encoder-decoder-vocoder pipeline |
 | [`samples/SpeechToText`](../SpeechToText/) | ASR via ISpeechToTextClient — round-trip partner for TTS |
+| [`src/MLNet.Audio.DataIngestion`](../../src/MLNet.Audio.DataIngestion/) | TtsSentenceChunker, EspeakPhonemizationProcessor — the MEDI components used by KittenTTS |
+| [`src/MLNet.Audio.Tokenizers`](../../src/MLNet.Audio.Tokenizers/) | KittenTtsTokenizer — the ML.Tokenizers IPA tokenizer |
 | [`docs/architecture.md`](../../docs/architecture.md) | Full system architecture and TTS pipeline details |
 | [`docs/meai-integration.md`](../../docs/meai-integration.md) | MEAI interface mapping including ITextToSpeechClient |
