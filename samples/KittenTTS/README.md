@@ -80,18 +80,22 @@ KittenTTS uses **176 IPA symbols** in its vocabulary: 1 pad symbol, 11 punctuati
 
 ### How the Abstraction Layers Compose
 
-KittenTTS is built from four layers, each using standard .NET abstractions:
+KittenTTS is built from five layers, each using standard .NET abstractions:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Layer 3: Microsoft.Extensions.DataIngestion (MEDI)      │
+│ Layer 4: Microsoft.Extensions.DataIngestion (MEDI)      │
 │   TtsSentenceChunker → EspeakPhonemizationProcessor     │
 ├─────────────────────────────────────────────────────────┤
-│ Layer 2: Microsoft.ML.Tokenizers                        │
+│ Layer 3: Microsoft.ML.Tokenizers                        │
 │   KittenTtsTokenizer (Tokenizer base class)             │
 ├─────────────────────────────────────────────────────────┤
+│ Layer 2: Microsoft.Extensions.AI (MEAI)                 │
+│   ITextToSpeechClient → OnnxTextToSpeechClient          │
+│   (Same interface for KittenTTS, SpeechT5, or cloud)    │
+├─────────────────────────────────────────────────────────┤
 │ Layer 1: ML.NET Custom Transforms                       │
-│   OnnxKittenTtsTransformer (ITransformer)               │
+│   OnnxKittenTtsTransformer : IOnnxTtsSynthesizer        │
 ├─────────────────────────────────────────────────────────┤
 │ Layer 0: ONNX Runtime                                   │
 │   Single-pass neural network inference                  │
@@ -100,6 +104,7 @@ KittenTTS is built from four layers, each using standard .NET abstractions:
 
 This layered design isn't accidental — each layer aligns with a real .NET ecosystem abstraction:
 
+- **Provider abstraction** — `ITextToSpeechClient` from Microsoft.Extensions.AI means your consuming code doesn't know or care whether KittenTTS, SpeechT5, Azure Speech, or OpenAI is doing the synthesis. `OnnxTextToSpeechClient` wraps any `IOnnxTtsSynthesizer` — swap from KittenTTS to SpeechT5 with a one-line options change. This is the same pattern used for `ISpeechToTextClient` in the ASR samples.
 - **Composability** — `TtsSentenceChunker` and `EspeakPhonemizationProcessor` implement MEDI's `IngestionChunker<string>` and `IngestionChunkProcessor<string>`. They can be used independently or plugged into any pipeline that works with MEDI abstractions.
 - **Ecosystem alignment** — the same `IngestionChunker<string>` abstraction that chunks documents for text RAG also chunks text for TTS. If you've used MEDI for search indexing, the chunking model is already familiar.
 - **Swappability** — the transformer constructor accepts any `Microsoft.ML.Tokenizers.Tokenizer` via `options.Tokenizer`. Want a custom IPA tokenizer with a different symbol set? Provide it — the pipeline doesn't care.
