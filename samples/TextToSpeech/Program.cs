@@ -141,7 +141,7 @@ static void ShowApiPatterns()
         using var client = new OnnxTextToSpeechClient(options);
         var response = await client.GetAudioAsync("Say something");
         var audioContent = response.Contents.OfType<DataContent>().First();
-        File.WriteAllBytes("output.wav", audioContent.Data!.Value.ToArray());
+        File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
     """);
 
     Console.WriteLine("\n--- Pattern 3: ML.NET Pipeline ---");

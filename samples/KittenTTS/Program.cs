@@ -172,7 +172,7 @@ static void ShowApiPatterns()
         var ttsOptions = new TextToSpeechOptions { VoiceId = "Luna", Speed = 1.0f };
         var response = await client.GetAudioAsync("Say something", ttsOptions);
         var audioContent = response.Contents.OfType<DataContent>().First();
-        File.WriteAllBytes("output.wav", audioContent.Data!.Value.ToArray());
+        File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
     """);
 
     Console.WriteLine("\n--- Pattern 3: ML.NET Pipeline ---");

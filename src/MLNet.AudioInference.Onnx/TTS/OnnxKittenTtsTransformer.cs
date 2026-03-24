@@ -52,7 +52,7 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
         _session = new InferenceSession(options.ModelPath, sessionOptions);
 
         var voicesPath = options.VoicesPath
-            ?? Path.Combine(Path.GetDirectoryName(options.ModelPath)!, "voices.npz");
+            ?? Path.Combine(Path.GetDirectoryName(options.ModelPath) ?? Directory.GetCurrentDirectory(), "voices.npz");
         _voices = LoadVoicesNpz(voicesPath);
 
         _espeakPath = ResolveEspeakPath(options.EspeakPath);
@@ -69,8 +69,8 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
             // (voice names vary by model variant — mini uses Bella/Jasper/Luna, nano uses expr-voice-*)
             var firstVoice = _voices.Keys.FirstOrDefault()
                 ?? throw new InvalidOperationException("No voices loaded from voices.npz.");
-            Console.Error.WriteLine(
-                $"Warning: voice '{voice}' not found. Using '{firstVoice}'. " +
+            System.Diagnostics.Trace.TraceWarning(
+                $"Voice '{voice}' not found. Using '{firstVoice}'. " +
                 $"Available: {string.Join(", ", _voices.Keys)}");
             voice = firstVoice;
             voiceEmbeddings = _voices[voice];
@@ -274,12 +274,23 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start espeak-ng process.");
 
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit(10_000);
+        // Read stdout and stderr asynchronously to avoid deadlocks on full pipe buffers.
+        var stdOutTask = process.StandardOutput.ReadToEndAsync();
+        var stdErrTask = process.StandardError.ReadToEndAsync();
+
+        if (!process.WaitForExit(10_000))
+        {
+            try { process.Kill(true); } catch { /* best-effort cleanup */ }
+            throw new TimeoutException("espeak-ng did not complete within 10 seconds.");
+        }
+
+        process.WaitForExit(); // Ensure async I/O streams are flushed
+
+        var output = stdOutTask.Result;
+        var error = stdErrTask.Result;
 
         if (process.ExitCode != 0)
         {
-            var error = process.StandardError.ReadToEnd();
             throw new InvalidOperationException(
                 $"espeak-ng failed (exit {process.ExitCode}): {error}");
         }

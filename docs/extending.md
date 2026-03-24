@@ -625,12 +625,12 @@ OnnxTextToSpeechClient (MEAI ITextToSpeechClient)
 The internal interface is minimal:
 
 ```csharp
-internal interface IOnnxTtsSynthesizer
+internal interface IOnnxTtsSynthesizer : IDisposable
 {
     AudioData Synthesize(string text, TextToSpeechOptions? options);
     string ProviderName { get; }
-    string? ProviderUri { get; }
-    string ModelId { get; }
+    Uri? ProviderUri { get; }
+    string? ModelId { get; }
 }
 ```
 

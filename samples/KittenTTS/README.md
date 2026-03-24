@@ -190,7 +190,7 @@ Voices: models/kittentts/voices.npz
   Saved to output.wav
 
 === 2. ITextToSpeechClient (MEAI) ===
-  Provider: KittenTTS, Model: kittentts
+  Provider: OnnxKittenTts, Model: kittentts
   Audio: 132 KB WAV
 
 === 3. Available Voices ===

@@ -103,7 +103,7 @@ Separate package for Whisper speech-to-text via ONNX Runtime GenAI. ORT GenAI ha
 
 [Microsoft.Extensions.DataIngestion](https://www.nuget.org/packages/Microsoft.Extensions.DataIngestion.Abstractions) integration — proving DataIngestion is modality-agnostic, not just for text/PDF.
 
-**Dependencies:** Microsoft.Extensions.DataIngestion.Abstractions 10.3.0-preview.1, Microsoft.Extensions.AI.Abstractions 10.4.1
+**Dependencies:** Microsoft.Extensions.DataIngestion.Abstractions 10.4.0-preview.1.26160.2, Microsoft.Extensions.AI.Abstractions 10.4.1
 
 **Project reference:** MLNet.Audio.Core
 

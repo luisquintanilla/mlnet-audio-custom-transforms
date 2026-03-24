@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using MLNet.Audio.Core;
@@ -13,7 +12,7 @@ namespace MLNet.AudioInference.Onnx;
 ///   using var client = new OnnxTextToSpeechClient(speecht5Options);
 ///   var response = await client.GetAudioAsync("Hello, world!");
 ///   var audio = response.Contents.OfType&lt;DataContent&gt;().First();
-///   File.WriteAllBytes("output.wav", audio.Data!.Value.ToArray());
+///   File.WriteAllBytes("output.wav", audio.Data.ToArray());
 /// </summary>
 #pragma warning disable AIEXP001 // ITextToSpeechClient is experimental
 public sealed class OnnxTextToSpeechClient : ITextToSpeechClient

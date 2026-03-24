@@ -371,7 +371,7 @@ var response = await client.GetAudioAsync("Hello!", options);
 
 // Metadata via GetService
 var metadata = client.GetService<TextToSpeechClientMetadata>();
-Console.WriteLine(metadata?.ProviderName);    // "OnnxSpeechT5" or "OnnxKittenTTS"
+Console.WriteLine(metadata?.ProviderName);    // "OnnxSpeechT5" or "OnnxKittenTts"
 Console.WriteLine(metadata?.DefaultModelId);
 ```
 
