@@ -47,8 +47,11 @@ public class OnnxKittenTtsOptions
     /// <summary>Optional tokenizer for IPA symbol encoding. Defaults to KittenTtsTokenizer when not specified.</summary>
     public Tokenizer? Tokenizer { get; set; }
 
-    /// <summary>Maximum tokens per chunk when using token-aware chunking. Used when a Tokenizer is available.</summary>
-    public int MaxTokensPerChunk { get; set; } = 400;
+    /// <summary>
+    /// Maximum tokens per chunk when using token-aware chunking. Used when a Tokenizer is available.
+    /// When null, falls back to MaxChunkLength for backward compatibility.
+    /// </summary>
+    public int? MaxTokensPerChunk { get; set; }
 
     /// <summary>Number of samples to trim from end of generated audio. Default: 5000.</summary>
     public int TrimEndSamples { get; set; } = 5000;

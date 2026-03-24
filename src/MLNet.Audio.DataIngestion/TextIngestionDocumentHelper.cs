@@ -19,7 +19,10 @@ public static class TextIngestionDocumentHelper
         var doc = new IngestionDocument(identifier ?? "text-input");
         var section = new IngestionDocumentSection("content");
 
-        var paragraphs = text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
+        // Normalize line endings (CRLF → LF) before splitting paragraphs
+        var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+        var paragraphs = normalized.Split("\n\n", StringSplitOptions.RemoveEmptyEntries);
         foreach (var para in paragraphs)
         {
             var trimmed = para.Trim();

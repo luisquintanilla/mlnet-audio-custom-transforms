@@ -8,6 +8,7 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using MLNet.Audio.Core;
 using MLNet.Audio.DataIngestion;
+using Microsoft.ML.Tokenizers;
 using MLNet.Audio.Tokenizers;
 
 namespace MLNet.AudioInference.Onnx;
@@ -32,7 +33,7 @@ public sealed class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSynthesizer
     private readonly OnnxKittenTtsOptions _options;
     private readonly InferenceSession _session;
     private readonly Dictionary<string, float[,]> _voices;
-    private readonly KittenTtsTokenizer _tokenizer;
+    private readonly Tokenizer _tokenizer;
     private readonly EspeakPhonemizationProcessor _phonemizer;
     private readonly TtsSentenceChunker _chunker;
 
@@ -57,12 +58,16 @@ public sealed class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSynthesizer
             ?? Path.Combine(Path.GetDirectoryName(options.ModelPath) ?? Directory.GetCurrentDirectory(), "voices.npz");
         _voices = LoadVoicesNpz(voicesPath);
 
-        _tokenizer = (options.Tokenizer as KittenTtsTokenizer) ?? KittenTtsTokenizer.Create();
+        _tokenizer = options.Tokenizer ?? KittenTtsTokenizer.Create();
 
         _phonemizer = new EspeakPhonemizationProcessor(options.EspeakPath);
 
+#pragma warning disable CS0618 // Obsolete MaxChunkLength used for backward compatibility
+        var effectiveMaxChunk = options.MaxTokensPerChunk ?? options.MaxChunkLength;
+#pragma warning restore CS0618
+
         _chunker = new TtsSentenceChunker(
-            maxLengthPerChunk: options.MaxTokensPerChunk,
+            maxLengthPerChunk: effectiveMaxChunk,
             measureLength: s => _tokenizer.CountTokens(s));
     }
 

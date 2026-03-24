@@ -88,7 +88,7 @@ public sealed partial class TtsSentenceChunker : IngestionChunker<string>
             if (string.IsNullOrEmpty(trimmed))
                 continue;
 
-            if (_measureLength(trimmed) <= maxLen)
+            if (_measureLength(EnsurePunctuation(trimmed)) <= maxLen)
             {
                 chunks.Add(EnsurePunctuation(trimmed));
             }
@@ -100,7 +100,7 @@ public sealed partial class TtsSentenceChunker : IngestionChunker<string>
                 foreach (var word in words)
                 {
                     var candidate = sb.Length > 0 ? $"{sb} {word}" : word;
-                    if (_measureLength(candidate) <= maxLen)
+                    if (_measureLength(EnsurePunctuation(candidate)) <= maxLen)
                     {
                         if (sb.Length > 0) sb.Append(' ');
                         sb.Append(word);
