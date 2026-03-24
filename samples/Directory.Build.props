@@ -13,4 +13,8 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.24.2" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(UseGpuRuntime)' != 'true'">
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.2" />
+  </ItemGroup>
+
 </Project>

@@ -42,7 +42,7 @@ using MLNet.AudioInference.Onnx;
 Console.WriteLine("=== KittenTTS Text-to-Speech — ONNX + espeak-ng ===\n");
 
 // --- Resolve model path ---
-var modelDir = args.Length > 0 ? args[0] : @"models\kittentts";
+var modelDir = args.Length > 0 ? args[0] : Path.Combine("models", "kittentts");
 if (!Directory.Exists(modelDir))
 {
     // Also try relative to project directory (for running from repo root via dotnet run --project)
