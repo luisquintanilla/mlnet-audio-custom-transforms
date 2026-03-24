@@ -225,6 +225,8 @@ This sample sits at the **highest abstraction level**. Here's how the three appr
 | **Best for** | Production pipelines | Easy local inference | Custom decoding, research |
 | **Cloud support?** | ✅ Azure, OpenAI, etc. | ❌ Local only | ❌ Local only |
 
+**The key insight:** all three approaches can be consumed through the same `ISpeechToTextClient` interface. `OnnxSpeechToTextClient` wraps ORT GenAI, `OnnxWhisperSpeechToTextClient` wraps raw ONNX — your pipeline code stays identical regardless of which backend you choose.
+
 ## Key Takeaways
 
 1. **Provider abstraction is the most important pattern for production systems.** Write your pipeline once against `ISpeechToTextClient`, then swap Azure → OpenAI → local Whisper → a mock without changing pipeline code.
@@ -244,6 +246,18 @@ This sample sits at the **highest abstraction level**. Here's how the three appr
 | [TextToSpeech](../TextToSpeech/) | The reverse direction — text → audio via SpeechT5 ONNX, completing the voice round-trip |
 | [docs/meai-integration.md](../../docs/meai-integration.md) | Deep dive into the Microsoft.Extensions.AI integration patterns (`ISpeechToTextClient`, `IEmbeddingGenerator<AudioData, Embedding<float>>`) |
 
+## Prerequisites
+
+### Required Software
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+
+### No Model Required
+
+This sample is **purely demonstrative** — it shows API patterns and architecture without requiring any ONNX model or external service. It generates synthetic audio for feature extraction demonstrations.
+
+This is intentional: the sample teaches you the **patterns** for provider-agnostic speech-to-text so you can plug in any backend (Azure Speech, OpenAI Whisper API, local Whisper model, or a mock for testing).
+
 ## Running the Sample
 
 ```bash
@@ -252,3 +266,23 @@ dotnet run
 ```
 
 No model downloads or API keys required — the sample demonstrates patterns and runs real feature extraction on synthetic audio.
+
+## Troubleshooting
+
+### "No actual transcription happens"
+This is by design. The SpeechToText sample demonstrates **patterns and architecture**, not actual inference. For real transcription:
+- **Easiest**: Use the [WhisperTranscription](../WhisperTranscription/) sample with an ORT GenAI Whisper model
+- **Most control**: Use the [WhisperRawOnnx](../WhisperRawOnnx/) sample with raw ONNX encoder/decoder models
+- **Cloud**: Implement `ISpeechToTextClient` against Azure Speech Services or OpenAI Whisper API
+
+### Which ISpeechToTextClient implementation should I use?
+
+| Approach | Best For | Complexity | Latency |
+|----------|----------|------------|---------|
+| Cloud provider (Azure, OpenAI) | Production, highest accuracy | Low (API key) | Network-dependent |
+| ORT GenAI (`OnnxSpeechToTextClient`) | Local inference, simple API | Medium (model download) | ~2-5s for 30s audio |
+| Raw ONNX (`OnnxWhisperSpeechToTextClient`) | Full control, custom sampling | High (manual KV cache) | ~2-5s for 30s audio |
+| Mock client | Unit testing | Trivial | Instant |
+
+### Build warnings about missing ONNX models
+Some warnings about ONNX model paths are expected in this sample since no model is loaded. The sample runs successfully without any models.

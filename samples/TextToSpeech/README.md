@@ -8,6 +8,30 @@
 - **`ITextToSpeechClient`** — the official MEAI interface for TTS, backed by local ONNX models
 - **Whisper ↔ SpeechT5 symmetry** — how ASR and TTS are mirror-image pipelines sharing the same KV cache pattern
 
+## Where This Fits in the Architecture
+
+SpeechT5 is the most complex transform in the library — a **3-model autoregressive pipeline**:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Layer 2: MEAI                                            │
+│   ITextToSpeechClient (same interface for SpeechT5 AND  │
+│   KittenTTS — swap backends without changing your code)  │
+├─────────────────────────────────────────────────────────┤
+│ Layer 1: ML.NET Transform                                │
+│   OnnxSpeechT5TtsTransformer (ITransformer)              │
+│   ├─ SentencePieceCharTokenizer (ML.Tokenizers)         │
+│   ├─ ONNX Encoder → hidden states                        │
+│   ├─ ONNX Decoder (autoregressive + KV cache) → mel     │
+│   └─ ONNX Vocoder (HiFi-GAN) → PCM waveform            │
+├─────────────────────────────────────────────────────────┤
+│ Layer 0: Audio Primitives                                 │
+│   AudioData, AudioIO (WAV I/O)                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+The `ITextToSpeechClient` abstraction means you can switch from SpeechT5 to [KittenTTS](../KittenTTS/) (or a cloud API) with a single line change. The [KittenTTS sample](../KittenTTS/) shows the lightweight alternative.
+
 ## The Concept: Text-to-Speech Synthesis
 
 ### What TTS Is
@@ -316,6 +340,51 @@ This creates an audio-to-audio pipeline: input audio is transcribed by Whisper, 
 3. **`ITextToSpeechClient` is the official MEAI interface.** Available in `Microsoft.Extensions.AI.Abstractions` 10.4.1 (marked `[Experimental]`). `OnnxTextToSpeechClient` accepts both `OnnxSpeechT5Options` and `OnnxKittenTtsOptions` — one client for all local TTS backends via the internal `IOnnxTtsSynthesizer` interface.
 
 4. **Whisper and SpeechT5 are mirrors.** Same KV cache autoregressive pattern, opposite direction. Understanding one helps you understand the other. The key insight: both models generate output *one step at a time*, feeding each output back as input to the next step.
+
+## Troubleshooting
+
+### "Model not found" errors
+SpeechT5 requires **three** separate ONNX files. Verify all are present:
+```bash
+ls models/speecht5/
+# Should contain:
+#   encoder_model.onnx           (~343 MB)
+#   decoder_model_merged.onnx    (~244 MB)
+#   decoder_postnet_and_vocoder.onnx (~55 MB)
+#   spm_char.model               (SentencePiece tokenizer)
+#   speaker.npy                  (default speaker embedding)
+```
+Download with:
+```bash
+git clone https://huggingface.co/NeuML/txtai-speecht5-onnx models/speecht5
+```
+
+### Output sounds garbled or robotic
+- Verify all three ONNX files downloaded completely (check file sizes above)
+- Ensure `spm_char.model` is present — if the tokenizer file is missing, SpeechT5 will throw a file-not-found exception when loading
+- Very long text may accumulate decoder errors. Try shorter sentences first
+- The stop threshold (0.5) may cause early cutoff for some voices — try lowering to 0.3
+
+### Output is silent (0-length audio)
+- The autoregressive decoder may not have converged. This can happen with:
+  - Empty or whitespace-only input text
+  - Characters not in the SentencePiece vocabulary
+  - Corrupted model files (re-download)
+
+### Comparing with KittenTTS
+If you're choosing between SpeechT5 and KittenTTS:
+
+| Criterion | SpeechT5 | KittenTTS |
+|-----------|----------|-----------|
+| Quality | Good, natural prosody | Good, natural prosody |
+| Speed | Slower (autoregressive decoder loop) | Faster (single forward pass) |
+| Model size | ~642 MB (3 files) | 41-80 MB (1 file) |
+| Voices | Custom via speaker embedding | 8 built-in (Bella, Jasper, etc.) |
+| Voice cloning | ✅ Any x-vector embedding | ❌ Fixed voice set |
+| External deps | None | Requires espeak-ng |
+| Output quality | 16 kHz | 24 kHz |
+
+**Recommendation**: Use KittenTTS for quick prototyping and lightweight deployment. Use SpeechT5 when you need voice cloning or don't want external dependencies.
 
 ## Going Further
 

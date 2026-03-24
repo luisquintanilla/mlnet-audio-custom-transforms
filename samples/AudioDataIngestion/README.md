@@ -34,6 +34,18 @@ This was designed for text workflows — reading Markdown, PDF, or HTML, chunkin
 
 The key insight: **`T` is generic**. When `T = AudioData`, each `IngestionChunk<AudioData>` carries the actual audio segment as its content — type-safe, no serialization hacks, and directly consumable by the embedding generator.
 
+### The Key Insight: Modality-Agnostic Pipelines
+
+The `Microsoft.Extensions.DataIngestion` library was designed for text documents (PDFs, markdown, web pages), but its abstractions are **fundamentally modality-agnostic**:
+
+| Text Pipeline | Audio Pipeline | Shared Abstraction |
+|---|---|---|
+| `MarkdownReader` | `AudioDocumentReader` | `IngestionDocumentReader` |
+| `HeaderChunker` | `AudioSegmentChunker` | `IngestionChunker<T>` |
+| `TextEmbeddingProcessor` | `AudioEmbeddingChunkProcessor` | `IngestionChunkProcessor<T>` |
+
+This means you can mix modalities in the same pipeline, use the same vector store infrastructure, and leverage the same DI registration patterns — regardless of whether your content is text, audio, images, or video.
+
 ### Why This Matters for RAG
 
 Audio files — podcasts, meetings, music libraries, voice recordings — need to be searchable too. The RAG pattern for audio is:
@@ -309,6 +321,8 @@ var results = allChunks
 
 This is the retrieval phase of audio RAG. In production, you'd store embeddings in a vector database (e.g., Qdrant, Pinecone, Azure AI Search) and query it, but the similarity math is the same.
 
+> **Under the hood**: The similarity search uses `TensorPrimitives.CosineSimilarity()` from `System.Numerics.Tensors` — .NET's SIMD-accelerated vector math API. This is the same API used in text embedding pipelines, reinforcing the modality-agnostic design: audio embeddings are just float arrays, and vector operations work identically regardless of what produced them.
+
 ### Synthetic Audio Patterns
 
 The four test signals are deliberately chosen to create meaningful similarity structure:
@@ -329,6 +343,30 @@ Expected similarity ordering: `440 Hz ↔ 880 Hz > 440 Hz ↔ chirp > 440 Hz ↔
 3. **`IAsyncEnumerable` streaming enables memory-efficient processing.** Large audio collections (thousands of files, hours of audio) can be processed chunk-by-chunk without loading everything into memory. Each chunk flows through the pipeline and can be indexed incrementally.
 
 4. **This enables audio RAG.** Index audio libraries by embedding, search by acoustic similarity, retrieve relevant segments. The same vector-store infrastructure used for text RAG works for audio — because the embeddings are just `float[]` vectors regardless of modality.
+
+## Troubleshooting
+
+### "Model not found" — synthetic demo runs instead
+This is expected behavior, not an error. Without a CLAP model, the sample demonstrates the pipeline components (Reader, Chunker) with synthetic data. To run with real embeddings:
+```bash
+huggingface-cli download lquint/clap-htsat-unfused-onnx --local-dir models/clap
+```
+
+### Cosine similarity values seem wrong
+- Identical audio should have similarity ~1.0, completely different audio ~0.0
+- If all similarities are very high (>0.95), the model may not be discriminating well — try longer audio segments
+- If all similarities are near 0, check that the embedding dimension matches your model's output
+
+### Memory issues with large audio files
+The DataIngestion pipeline processes audio in chunks (default 2-second segments). If you're running out of memory:
+- Reduce segment size: `new AudioSegmentChunker(TimeSpan.FromSeconds(1))`
+- Process files one at a time instead of loading all into memory
+- The pipeline uses `IAsyncEnumerable` — memory usage should be bounded by chunk count, not file size
+
+### Audio file not recognized
+- Only WAV format is supported by `AudioDocumentReader`
+- The reader expects PCM WAV (uncompressed). Compressed formats (MP3, FLAC, OGG) need conversion first
+- Use ffmpeg to convert: `ffmpeg -i input.mp3 -ar 16000 -ac 1 output.wav`
 
 ## Going Further
 

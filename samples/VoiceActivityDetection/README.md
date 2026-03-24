@@ -44,6 +44,36 @@ Classification labels a *whole clip*; VAD finds *time segments within* a clip.
 - **Real-time communication:** Mute detection, echo cancellation triggers, bandwidth optimization (don't transmit silence).
 - **Podcast/video editing:** Automatically trim dead air, detect pauses for chapter markers, identify segment boundaries.
 
+### Why VAD Is a Critical Preprocessing Step
+
+VAD is rarely the end goal — it's the **first stage** in larger audio processing pipelines:
+
+| Use Case | How VAD Helps |
+|----------|---------------|
+| **ASR Preprocessing** | Skip silence, reduce Whisper processing time by 30-60% |
+| **Meeting Analysis** | Identify who spoke when (combined with speaker diarization) |
+| **Real-time Communication** | Mute detection, bandwidth optimization, echo cancellation |
+| **Podcast/Video Editing** | Auto-trim silence, find content boundaries |
+| **Security/Surveillance** | Trigger recording only when speech is detected |
+| **Accessibility** | Alert deaf users when someone starts speaking |
+
+In this library, you could compose VAD with ASR:
+
+```csharp
+// Step 1: Detect speech segments
+var segments = vadTransformer.DetectSpeech(audio);
+
+// Step 2: Transcribe only the speech segments (skip silence)
+foreach (var segment in segments)
+{
+    // Convert segment timestamps to sample indices
+    var startSample = (int)(segment.Start * audio.SampleRate);
+    var endSample = Math.Min((int)(segment.End * audio.SampleRate), audio.Samples.Length);
+    var speechAudio = new AudioData(audio.Samples[startSample..endSample], audio.SampleRate);
+    var text = whisperTransformer.Transcribe(speechAudio);
+}
+```
+
 ### How It Works: Frame-by-Frame Scoring
 
 VAD processes audio through a **sliding window** pipeline:
@@ -79,6 +109,27 @@ Audio stream
               ▼
   SpeechSegment[] (Start, End, Confidence)
 ```
+
+### Abstraction Layers
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Custom Interface: IVoiceActivityDetector                 │
+│   DetectSpeechAsync() → IAsyncEnumerable<SpeechSegment>  │
+├─────────────────────────────────────────────────────────┤
+│ ML.NET: ITransformer / IEstimator<T>                     │
+│   OnnxVadTransformer — composable via .Fit() / .Transform()
+│   Enables pipeline composition with other transforms     │
+├─────────────────────────────────────────────────────────┤
+│ ONNX Runtime: InferenceSession                           │
+│   Silero VAD model (stateful LSTM, ~2 MB)               │
+├─────────────────────────────────────────────────────────┤
+│ Audio Primitives (MLNet.Audio.Core)                      │
+│   AudioData, AudioIO (WAV I/O, resampling)              │
+└─────────────────────────────────────────────────────────┘
+```
+
+Note: VAD doesn't use MEAI interfaces (no `IVoiceActivityDetector` in Microsoft.Extensions.AI yet), MEDI, or ML.Tokenizers. The `IVoiceActivityDetector` is a library-specific interface — a natural candidate for future MEAI standardization.
 
 ### The Model: Silero VAD
 
@@ -276,6 +327,40 @@ Compare with classification output (a single label + score for the entire clip) 
 3. **VAD is a critical preprocessing step for ASR pipelines.** Running Whisper on an entire meeting recording is wasteful and error-prone. VAD identifies the speech segments first, then only those segments are sent for transcription — saving compute and improving accuracy.
 
 4. **The `IVoiceActivityDetector` interface is custom to this library.** Unlike embeddings (`IEmbeddingGenerator`), speech-to-text (`ISpeechToTextClient`), or text-to-speech (`ITextToSpeechClient`), there is no Microsoft.Extensions.AI abstraction for voice activity detection. The `IVoiceActivityDetector` interface provides a streaming-first API with `IAsyncEnumerable<SpeechSegment>`.
+
+## Troubleshooting
+
+### "Model not found" — synthetic demo runs instead
+
+This is expected behavior. Without a Silero VAD model, the sample generates synthetic audio and demonstrates what VAD would detect. To run with real detection:
+
+```bash
+huggingface-cli download snakers4/silero-vad --include "*.onnx" --local-dir models/silero-vad
+```
+
+The model is tiny (~2 MB) — one of the smallest ONNX models you'll use.
+
+### No speech segments detected
+
+- **Threshold too high**: Default is 0.5. Try lowering to 0.3 for quieter speech: `options.Threshold = 0.3f`
+- **MinSpeechDuration too long**: Default is 250ms. Very short utterances ("yes", "no") may be filtered out. Try `options.MinSpeechDuration = TimeSpan.FromMilliseconds(100)`
+- **Audio is too quiet**: Normalize audio to [-1.0, 1.0] range before processing
+- **Wrong sample rate**: Silero VAD expects 16kHz. The transformer auto-resamples, but extremely low sample rate audio (<8kHz) may lose speech information
+
+### Too many speech segments (over-segmentation)
+
+- **MinSilenceDuration too short**: Default is 100ms. Increase to 300-500ms to merge segments separated by brief pauses: `options.MinSilenceDuration = TimeSpan.FromMilliseconds(300)`
+- **SpeechPad too small**: Default is 30ms. Increase padding to merge nearby segments: `options.SpeechPad = TimeSpan.FromMilliseconds(100)`
+- **Threshold too low**: Raise from 0.5 to 0.6-0.7 to be more selective about what counts as speech
+
+### Understanding the LSTM state
+
+Silero VAD is a **stateful model** — it carries hidden state (`h`, `c` tensors) between frames. This means:
+
+- Processing order matters — don't shuffle audio frames
+- The model "remembers" recent context, improving detection at speech/silence boundaries
+- Reset state between unrelated audio files (the transformer handles this automatically)
+- This is why VAD uses 512-sample windows (32ms at 16kHz) — small enough for real-time, large enough for the LSTM to be effective
 
 ## Going Further
 

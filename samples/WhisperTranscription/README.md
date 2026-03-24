@@ -42,6 +42,30 @@ This repository provides **three approaches** to the same ASR task (Whisper spee
 
 **This sample is the sweet spot for most local ASR use cases.** You get local execution (no cloud dependency, no data leaves your machine) with a simple API, without needing to understand Whisper's internal encoder-decoder architecture.
 
+### Abstraction Layers
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ MEAI: ISpeechToTextClient                                │
+│   OnnxSpeechToTextClient — same interface as Azure/OpenAI│
+│   Middleware pipeline: logging, OpenTelemetry, caching   │
+├─────────────────────────────────────────────────────────┤
+│ ML.NET: ITransformer / IEstimator<T>                     │
+│   OnnxSpeechToTextTransformer — composable pipeline      │
+│   mlContext.Transforms.OnnxSpeechToText(options)         │
+├─────────────────────────────────────────────────────────┤
+│ ONNX Runtime GenAI                                       │
+│   Handles encoder → decoder loop → KV cache internally   │
+│   You provide mel features, receive token IDs            │
+├─────────────────────────────────────────────────────────┤
+│ Audio Primitives (MLNet.Audio.Core)                      │
+│   WhisperFeatureExtractor (mel spectrogram)              │
+│   AudioData, AudioIO (WAV I/O, resampling)              │
+└─────────────────────────────────────────────────────────┘
+```
+
+ORT GenAI sits between you and the raw ONNX models, handling the complex decoder loop. Compare with [WhisperRawOnnx](../WhisperRawOnnx/) where YOU manage the decoder loop, KV cache, and token sampling directly.
+
 ### Model Format: ORT GenAI-Specific Export
 
 ORT GenAI requires models in its **own export format**, distinct from a plain ONNX export. The model directory must contain:
@@ -263,6 +287,60 @@ When no test WAV file is available, the sample generates a 3-second 440Hz sine w
 4. **Platform selection is a NuGet concern, not a code concern.** Switch from CPU to CUDA to DirectML by changing a single `<PackageReference>` — your C# stays identical.
 
 5. **This lives in a separate package (`MLNet.ASR.OnnxGenAI`) to isolate native dependencies.** The ORT GenAI native libraries are large (~100–400MB depending on platform). By putting this in its own package, applications that use cloud ASR or raw ONNX don't pay the size cost.
+
+## Troubleshooting
+
+### "Model not found" — API patterns shown instead
+This is expected behavior. Without a Whisper model in ORT GenAI format, the sample demonstrates API patterns. To run with real transcription:
+
+```bash
+# Option 1: Export with Olive (recommended for ORT GenAI)
+pip install olive-ai
+olive convert --model openai/whisper-base --provider onnxruntime-genai --output models/whisper-base
+
+# Option 2: Export with Optimum
+pip install optimum[onnxruntime]
+optimum-cli export onnx --model openai/whisper-base --task automatic-speech-recognition models/whisper-base/
+```
+
+### Model format confusion: ORT GenAI vs Raw ONNX
+ORT GenAI requires a **`genai_config.json`** file alongside the ONNX models. This is different from the raw ONNX format used by the [WhisperRawOnnx](../WhisperRawOnnx/) sample:
+
+| Format | Config File | Used By | Export Tool |
+|--------|-------------|---------|-------------|
+| ORT GenAI | `genai_config.json` | This sample (`WhisperTranscription`) | Olive |
+| Raw ONNX | `config.json` | [WhisperRawOnnx](../WhisperRawOnnx/) | Optimum |
+
+If you have raw ONNX models but no `genai_config.json`, use the [WhisperRawOnnx](../WhisperRawOnnx/) sample instead.
+
+### ORT GenAI native library not found
+The `MLNet.ASR.OnnxGenAI` package depends on `Microsoft.ML.OnnxRuntimeGenAI.Managed` — but you need to add the **native runtime** package for your platform:
+
+```xml
+<!-- CPU -->
+<PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.12.1" />
+
+<!-- CUDA (NVIDIA GPU) -->
+<PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.Cuda" Version="0.12.1" />
+
+<!-- DirectML (Windows GPU) -->
+<PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.DirectML" Version="0.12.1" />
+```
+
+### Transcription quality issues
+- **Whisper-base** (~74M params) is good for demos but not production. For better accuracy, use `whisper-small` (244M) or `whisper-medium` (769M)
+- Audio should be 16kHz mono PCM for best results (the library auto-resamples)
+- Whisper works best with 30-second audio chunks — very long audio may need chunking
+
+### When should I use this vs Raw ONNX vs cloud API?
+
+| Approach | Convenience | Control | Dependencies |
+|----------|-------------|---------|--------------|
+| **Cloud API** | ⭐⭐⭐ | ⭐ | API key only |
+| **ORT GenAI** (this sample) | ⭐⭐ | ⭐⭐ | ORT GenAI native lib + model |
+| **Raw ONNX** | ⭐ | ⭐⭐⭐ | OnnxRuntime + exported model |
+
+**This sample is the sweet spot** — more control than a cloud API, but the ORT GenAI runtime handles the complex decoder loop and KV cache management for you.
 
 ## Going Further
 

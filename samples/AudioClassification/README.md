@@ -6,6 +6,29 @@ This sample demonstrates how to classify audio into semantic categories (speech,
 
 How to run an Audio Spectrogram Transformer (AST) model through ML.NET's `IEstimator<T>` / `ITransformer` pattern, and why the pipeline decomposes into three composable stages: feature extraction, scoring, and post-processing.
 
+## Where This Fits in the Architecture
+
+Audio classification uses a **3-stage ML.NET pipeline** pattern — the same decomposition used across all encoder-only transforms in this library:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Stage 1: AudioFeatureExtractionTransformer               │
+│   Raw audio → Mel spectrogram (128 bins, 1024 frames)   │
+├─────────────────────────────────────────────────────────┤
+│ Stage 2: OnnxAudioScoringTransformer                     │
+│   Mel spectrogram → ONNX Runtime inference → logits      │
+├─────────────────────────────────────────────────────────┤
+│ Stage 3: AudioClassificationPostProcessingTransformer    │
+│   Logits → Softmax → Labels + Probabilities              │
+└─────────────────────────────────────────────────────────┘
+```
+
+All three stages implement `ITransformer` (via `IEstimator<T>.Fit()`), which means they compose via ML.NET's lazy pipeline — computation only happens when you iterate the output `IDataView`. This is the same `Fit()`/`Transform()` pattern used across all ML.NET transforms.
+
+The **single-line facade** (`mlContext.Transforms.OnnxAudioClassification(options)`) wires all three stages internally. The **composed pipeline** approach lets you replace or customize any stage — for example, swapping the feature extractor for a different spectrogram configuration.
+
+This same 3-stage pattern appears in [AudioEmbeddings](../AudioEmbeddings/) (with pooling instead of softmax) — once you understand one, you understand both.
+
 ---
 
 ## The Concept: Audio Classification
@@ -281,6 +304,38 @@ ML.NET maps between `IDataView` columns and POCO properties using `[ColumnName]`
 3. **Classification outputs are rich.** You get `PredictedLabel` (the answer), `Score` (how confident), and `Probabilities[]` (the full distribution). Use the distribution for multi-label scenarios, confidence thresholds, or debugging.
 
 4. **Three abstraction levels for three use cases.** Facade for simplicity, composed pipeline for flexibility, direct API for minimal ceremony. Same model, same results, different ergonomics.
+
+---
+
+## Troubleshooting
+
+### "Model not found" error
+The AST ONNX model must be downloaded separately. The `onnx/` subdirectory should contain `model.onnx`:
+```bash
+huggingface-cli download onnx-community/ast-finetuned-audioset-10-10-0.4593-ONNX --include "onnx/*" --local-dir models/ast
+```
+
+### Audio file format issues
+- The sample auto-resamples to 16kHz — most formats work
+- If you get garbled results, ensure your WAV file is valid PCM (not compressed)
+- Very short audio (<0.5s) may not produce meaningful classification results
+
+### Unexpected labels or low confidence
+- AST was trained on AudioSet — it recognizes ~527 labels but the sample shows a 20-class subset
+- Very quiet audio may classify as "Silence" even if it contains faint sounds
+- Mixed audio (speech over music) may split confidence across multiple labels — this is expected behavior, not an error
+
+### GPU vs CPU
+The `samples/Directory.Build.props` auto-detects CUDA at build/restore time. If you have a GPU but want CPU-only inference, unset the `CUDA_PATH` environment variable before building:
+```bash
+# PowerShell
+Remove-Item Env:CUDA_PATH -ErrorAction SilentlyContinue
+dotnet run -- "models/ast" "test.wav"
+
+# Bash
+unset CUDA_PATH
+dotnet run -- "models/ast" "test.wav"
+```
 
 ---
 
