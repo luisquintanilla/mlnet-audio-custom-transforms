@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using System.IO.Compression;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
@@ -9,6 +7,9 @@ using Microsoft.ML.Data;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using MLNet.Audio.Core;
+using MLNet.Audio.DataIngestion;
+using Microsoft.ML.Tokenizers;
+using MLNet.Audio.Tokenizers;
 
 namespace MLNet.AudioInference.Onnx;
 
@@ -16,23 +17,25 @@ namespace MLNet.AudioInference.Onnx;
 /// KittenTTS text-to-speech transformer — single ONNX model with espeak-ng phonemization.
 ///
 /// Pipeline stages:
-///   1. Text chunking (max 400 chars, sentence boundaries)
-///   2. Phonemization via espeak-ng subprocess (IPA with stress marks)
-///   3. TextCleaner — IPA symbol → integer token ID mapping
+///   1. Sentence chunking via <see cref="TtsSentenceChunker"/> (token-aware)
+///   2. Phonemization via <see cref="EspeakPhonemizationProcessor"/> (IPA with stress marks)
+///   3. Tokenization via <see cref="KittenTtsTokenizer"/> (IPA symbol → integer token ID)
 ///   4. ONNX inference — (input_ids, voice_style, speed) → raw audio
-///   5. Trim trailing 5000 samples, concatenate chunks
+///   5. Trim trailing samples, concatenate chunks
 ///   6. Output as AudioData at 24 kHz
 ///
 /// Models: KittenML/kitten-tts-mini-0.8, kitten-tts-micro-0.8, kitten-tts-nano-0.8
 /// Voices: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
 /// </summary>
-public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSynthesizer
+public sealed class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSynthesizer
 {
     private readonly MLContext _mlContext;
     private readonly OnnxKittenTtsOptions _options;
     private readonly InferenceSession _session;
     private readonly Dictionary<string, float[,]> _voices;
-    private readonly string _espeakPath;
+    private readonly Tokenizer _tokenizer;
+    private readonly EspeakPhonemizationProcessor _phonemizer;
+    private readonly TtsSentenceChunker _chunker;
 
     public bool IsRowToRowMapper => true;
 
@@ -55,7 +58,17 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
             ?? Path.Combine(Path.GetDirectoryName(options.ModelPath) ?? Directory.GetCurrentDirectory(), "voices.npz");
         _voices = LoadVoicesNpz(voicesPath);
 
-        _espeakPath = ResolveEspeakPath(options.EspeakPath);
+        _tokenizer = options.Tokenizer ?? KittenTtsTokenizer.Create();
+
+        _phonemizer = new EspeakPhonemizationProcessor(options.EspeakPath);
+
+#pragma warning disable CS0618 // Obsolete MaxChunkLength used for backward compatibility
+        var effectiveMaxChunk = options.MaxTokensPerChunk ?? options.MaxChunkLength;
+#pragma warning restore CS0618
+
+        _chunker = new TtsSentenceChunker(
+            maxLengthPerChunk: effectiveMaxChunk,
+            measureLength: s => _tokenizer.CountTokens(s));
     }
 
     /// <summary>Synthesize speech from text using the specified voice and speed.</summary>
@@ -76,22 +89,27 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
             voiceEmbeddings = _voices[voice];
         }
 
-        var chunks = ChunkText(text, _options.MaxChunkLength);
+        var sentenceChunks = _chunker.ChunkTextAsync(text).ToBlockingEnumerable().ToList();
         var allSamples = new List<float>();
 
-        foreach (var chunk in chunks)
+        foreach (var sentenceChunk in sentenceChunks)
         {
-            var phonemes = Phonemize(chunk);
-            var tokens = TextClean(phonemes);
+            var sentenceText = sentenceChunk.Content;
+
+            // Stage 2: Phonemize
+            var phonemes = _phonemizer.PhonemizeAsync(sentenceText).GetAwaiter().GetResult();
+
+            // Stage 3: Tokenize
+            var tokenIds = _tokenizer.EncodeToIds(phonemes);
 
             // Build token sequence: [0, ...tokens, 10, 0]
             var tokenSequence = new List<int> { 0 };
-            tokenSequence.AddRange(tokens);
+            tokenSequence.AddRange(tokenIds);
             tokenSequence.Add(10); // ellipsis token
             tokenSequence.Add(0);  // pad token
 
             // Select voice embedding row based on original chunk length
-            var rowIdx = Math.Min(chunk.Length, voiceEmbeddings.GetLength(0) - 1);
+            var rowIdx = Math.Min(sentenceText.Length, voiceEmbeddings.GetLength(0) - 1);
             var embDim = voiceEmbeddings.GetLength(1);
             var style = new float[embDim];
             for (int i = 0; i < embDim; i++)
@@ -190,204 +208,6 @@ public sealed partial class OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSyn
         }
         return result;
     }
-
-    // ========================================================================
-    // Stage 1: Text chunking
-    // ========================================================================
-
-    private static List<string> ChunkText(string text, int maxLen)
-    {
-        var sentences = SentenceSplitRegex().Split(text);
-        var chunks = new List<string>();
-
-        foreach (var sentence in sentences)
-        {
-            var trimmed = sentence.Trim();
-            if (string.IsNullOrEmpty(trimmed))
-                continue;
-
-            if (trimmed.Length <= maxLen)
-            {
-                chunks.Add(EnsurePunctuation(trimmed));
-            }
-            else
-            {
-                // Split long sentences by words
-                var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var sb = new StringBuilder();
-                foreach (var word in words)
-                {
-                    if (sb.Length + word.Length + 1 <= maxLen)
-                    {
-                        if (sb.Length > 0) sb.Append(' ');
-                        sb.Append(word);
-                    }
-                    else
-                    {
-                        if (sb.Length > 0)
-                        {
-                            chunks.Add(EnsurePunctuation(sb.ToString()));
-                            sb.Clear();
-                        }
-                        sb.Append(word);
-                    }
-                }
-                if (sb.Length > 0)
-                    chunks.Add(EnsurePunctuation(sb.ToString()));
-            }
-        }
-
-        if (chunks.Count == 0)
-            chunks.Add(EnsurePunctuation(text));
-
-        return chunks;
-    }
-
-    private static string EnsurePunctuation(string text)
-    {
-        if (text.Length == 0) return text;
-        var last = text[^1];
-        if (last is '.' or '!' or '?' or ',' or ';' or ':')
-            return text;
-        return text + ",";
-    }
-
-    [GeneratedRegex(@"[.!?]+")]
-    private static partial Regex SentenceSplitRegex();
-
-    // ========================================================================
-    // Stage 2: Phonemization via espeak-ng
-    // ========================================================================
-
-    private string Phonemize(string text)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = _espeakPath,
-            ArgumentList = { "--ipa", "-q", "--sep= ", "-v", "en-us", text },
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start espeak-ng process.");
-
-        // Read stdout and stderr asynchronously to avoid deadlocks on full pipe buffers.
-        var stdOutTask = process.StandardOutput.ReadToEndAsync();
-        var stdErrTask = process.StandardError.ReadToEndAsync();
-
-        if (!process.WaitForExit(10_000))
-        {
-            try { process.Kill(true); } catch { /* best-effort cleanup */ }
-            throw new TimeoutException("espeak-ng did not complete within 10 seconds.");
-        }
-
-        process.WaitForExit(); // Ensure async I/O streams are flushed
-
-        var output = stdOutTask.Result;
-        var error = stdErrTask.Result;
-
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(
-                $"espeak-ng failed (exit {process.ExitCode}): {error}");
-        }
-
-        return output.Trim();
-    }
-
-    private static string ResolveEspeakPath(string? configuredPath)
-    {
-        if (!string.IsNullOrEmpty(configuredPath))
-        {
-            if (File.Exists(configuredPath))
-                return configuredPath;
-            throw new FileNotFoundException(
-                $"espeak-ng not found at configured path: {configuredPath}");
-        }
-
-        // Auto-detect from PATH
-        var names = OperatingSystem.IsWindows()
-            ? new[] { "espeak-ng.exe", "espeak.exe" }
-            : new[] { "espeak-ng", "espeak" };
-
-        var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
-        foreach (var dir in paths)
-        {
-            foreach (var name in names)
-            {
-                var candidate = Path.Combine(dir, name);
-                if (File.Exists(candidate))
-                    return candidate;
-            }
-        }
-
-        // Common install locations
-        var commonPaths = OperatingSystem.IsWindows()
-            ? new[] { @"C:\Program Files\eSpeak NG\espeak-ng.exe", @"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe" }
-            : new[] { "/usr/bin/espeak-ng", "/usr/local/bin/espeak-ng" };
-
-        foreach (var path in commonPaths)
-        {
-            if (File.Exists(path))
-                return path;
-        }
-
-        throw new FileNotFoundException(
-            "espeak-ng not found. Install espeak-ng: " +
-            "Windows: 'winget install espeak-ng' or https://github.com/espeak-ng/espeak-ng/releases | " +
-            "Linux: 'apt install espeak-ng' | " +
-            "macOS: 'brew install espeak-ng'");
-    }
-
-    // ========================================================================
-    // Stage 3: TextCleaner — IPA symbol → token ID
-    // ========================================================================
-
-    // Symbol table: pad + punctuation + letters + IPA characters (176 total)
-    private const string Pad = "$";
-    private const string Punctuation = ";:,.!?¡¿—…\"«»\u201C\u201D ";
-    private const string Letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    private const string LettersIpa =
-        "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘\u0329ᵻ";
-
-    private static readonly Dictionary<char, int> SymbolToId = BuildSymbolTable();
-
-    private static Dictionary<char, int> BuildSymbolTable()
-    {
-        var all = Pad + Punctuation + Letters + LettersIpa;
-        var dict = new Dictionary<char, int>();
-        for (int i = 0; i < all.Length; i++)
-            dict[all[i]] = i;
-        return dict;
-    }
-
-    private static List<int> TextClean(string phonemes)
-    {
-        // Tokenize: split on word boundaries and punctuation
-        var matches = PhonemeTokenRegex().Matches(phonemes);
-        var sb = new StringBuilder();
-        foreach (Match m in matches)
-        {
-            if (sb.Length > 0) sb.Append(' ');
-            sb.Append(m.Value);
-        }
-
-        var text = sb.ToString();
-        var tokens = new List<int>();
-        foreach (var ch in text)
-        {
-            if (SymbolToId.TryGetValue(ch, out var id))
-                tokens.Add(id);
-            // Unknown chars are silently skipped (matches Python behavior)
-        }
-        return tokens;
-    }
-
-    [GeneratedRegex(@"\w+|[^\w\s]")]
-    private static partial Regex PhonemeTokenRegex();
 
     // ========================================================================
     // Stage 4: ONNX inference
