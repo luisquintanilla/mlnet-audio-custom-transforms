@@ -11,8 +11,12 @@ echo "=== Downloading KittenTTS model (if not already present) ==="
 if [ ! -d "models/kittentts" ]; then
   git clone https://huggingface.co/KittenML/kitten-tts-mini-0.8 models/kittentts
 fi
-# Ensure LFS files are fetched (not just pointers)
-cd models/kittentts && git lfs pull && cd ../..
+# Ensure LFS files are fetched (not just pointers) when this is a git repo
+if [ -d "models/kittentts/.git" ]; then
+  cd models/kittentts && git lfs pull && cd ../..
+else
+  echo "models/kittentts exists but is not a git repository; skipping 'git lfs pull'."
+fi
 
 echo "=== Restoring dependencies ==="
 dotnet restore
