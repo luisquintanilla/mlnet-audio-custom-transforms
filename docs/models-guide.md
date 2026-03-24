@@ -719,4 +719,4 @@ GPU provides minimal benefit for Silero VAD (already sub-millisecond on CPU) or 
 | VAD | Silero VAD | `huggingface-cli download snakers4/silero-vad --include "*.onnx" --local-dir models/silero-vad` | `models/silero-vad/silero_vad.onnx` |
 | STT (Raw ONNX) | Whisper | `optimum-cli export onnx --model openai/whisper-base models/whisper-base/` | `encoder_model.onnx` + `decoder_model_merged.onnx` |
 | TTS | SpeechT5 | `git clone https://huggingface.co/NeuML/txtai-speecht5-onnx models/speecht5` | `encoder_model.onnx` + `decoder_model_merged.onnx` + `decoder_postnet_and_vocoder.onnx` |
-| TTS | KittenTTS Mini | `huggingface-cli download KittenML/kitten-tts-mini-0.8 --include "*.onnx" --local-dir models/kitten-tts-mini` | `model.onnx` |
+| TTS | KittenTTS Mini | `git clone https://huggingface.co/KittenML/kitten-tts-mini-0.8 models/kittentts` | `model.onnx` + `voices.npz` |
