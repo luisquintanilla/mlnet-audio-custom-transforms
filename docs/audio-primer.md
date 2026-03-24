@@ -45,6 +45,7 @@ Each sample is a single amplitude measurement — one number representing how fa
 How many samples are captured per second, measured in Hertz (Hz).
 
 - **16,000 Hz (16kHz)** — the standard for speech ML models (Whisper, Silero VAD, SpeechT5). Captures frequencies up to 8kHz, which covers the full range of human speech.
+- **24,000 Hz (24kHz)** — used by KittenTTS for higher-fidelity speech synthesis. Captures frequencies up to 12kHz, providing clearer consonants and more natural-sounding output than 16kHz.
 - **44,100 Hz (44.1kHz)** — CD quality. Common for music files.
 - **48,000 Hz (48kHz)** — common for video/broadcast audio.
 
@@ -320,6 +321,38 @@ text → SentencePiece tokenizer → token IDs → encoder → decoder loop
 - Vocoder converts mel spectrogram back into a PCM waveform
 - Outputs `AudioData` with the synthesized speech
 
+### KittenTTS (Lightweight Text-to-Speech)
+
+```
+text → text chunking (max 400 chars, sentence boundaries)
+    → espeak-ng (external tool: text → IPA phonemes)
+    → TextCleaner (IPA symbols → integer token IDs)
+    → single ONNX model (token IDs + voice embedding + speed → waveform)
+    → trim + concatenate → AudioData at 24 kHz
+```
+
+- **Fundamentally different from SpeechT5** — no encoder/decoder/vocoder split, no autoregressive loop
+- Uses **espeak-ng** (an external phonemization tool) instead of SentencePiece tokenization
+- **Single forward pass** through one ONNX model — faster and simpler than SpeechT5's 3-model pipeline
+- Voice selection via **named voices** stored in a `voices.npz` archive (8 built-in: Bella, Jasper, Luna, Bruno, etc.)
+- **24 kHz output** (higher than SpeechT5's 16 kHz)
+- Models range from 41 MB (Micro) to 80 MB (Mini) — much smaller than SpeechT5's 643 MB total
+
+**How it compares to SpeechT5:**
+
+| | SpeechT5 | KittenTTS |
+|---|---|---|
+| Models | 3 ONNX files (643 MB) | 1 ONNX file (41–80 MB) |
+| Decoding | Autoregressive (token by token) | Single forward pass |
+| Text processing | SentencePiece tokenizer | espeak-ng IPA phonemization |
+| Voice mechanism | Speaker embedding (`.npy` x-vector) | Named voices from `.npz` archive |
+| Sample rate | 16 kHz | 24 kHz |
+
+```csharp
+var options = new OnnxKittenTtsOptions { ModelPath = "models/kittentts/model.onnx" };
+var estimator = mlContext.Transforms.KittenTts(options);
+```
+
 ---
 
 ## Audio Processing in .NET: The Stack
@@ -345,6 +378,7 @@ Here's how the pieces fit together in this project, from lowest to highest level
 | `OnnxAudioEmbeddingTransformer` | Audio embeddings (speech → vector) |
 | `OnnxVadTransformer` | Voice activity detection (speech → segments) |
 | `OnnxSpeechT5TtsTransformer` | Text-to-speech (text → audio) |
+| `OnnxKittenTtsTransformer` | Lightweight text-to-speech (text → audio, single-pass) |
 
 ### Key Dependencies
 

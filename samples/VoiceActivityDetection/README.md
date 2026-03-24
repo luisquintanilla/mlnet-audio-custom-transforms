@@ -275,7 +275,7 @@ Compare with classification output (a single label + score for the entire clip) 
 
 3. **VAD is a critical preprocessing step for ASR pipelines.** Running Whisper on an entire meeting recording is wasteful and error-prone. VAD identifies the speech segments first, then only those segments are sent for transcription — saving compute and improving accuracy.
 
-4. **The `IVoiceActivityDetector` interface is custom to this library.** Unlike audio classification (`IChatClient`) or embeddings (`IEmbeddingGenerator`), there is no Microsoft.Extensions.AI abstraction for voice activity detection. The `IVoiceActivityDetector` interface provides a streaming-first API with `IAsyncEnumerable<SpeechSegment>`.
+4. **The `IVoiceActivityDetector` interface is custom to this library.** Unlike embeddings (`IEmbeddingGenerator`), speech-to-text (`ISpeechToTextClient`), or text-to-speech (`ITextToSpeechClient`), there is no Microsoft.Extensions.AI abstraction for voice activity detection. The `IVoiceActivityDetector` interface provides a streaming-first API with `IAsyncEnumerable<SpeechSegment>`.
 
 ## Going Further
 

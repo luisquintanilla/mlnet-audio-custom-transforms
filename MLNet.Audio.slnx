@@ -14,6 +14,7 @@
     <Project Path="samples/WhisperTranscription/WhisperTranscription.csproj" />
     <Project Path="samples/WhisperRawOnnx/WhisperRawOnnx.csproj" />
     <Project Path="samples/TextToSpeech/TextToSpeech.csproj" />
+    <Project Path="samples/KittenTTS/KittenTTS.csproj" />
     <Project Path="samples/AudioDataIngestion/AudioDataIngestion.csproj" />
   </Folder>
 </Solution>

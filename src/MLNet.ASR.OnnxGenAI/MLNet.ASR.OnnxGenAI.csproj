@@ -15,7 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.1" />
     <PackageReference Include="Microsoft.ML" Version="5.0.0" />
     <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.Managed" Version="0.12.1" />
   </ItemGroup>

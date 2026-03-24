@@ -606,6 +606,93 @@ See `OnnxAudioEmbeddingGenerator` for the full production example. The existing 
 | `OnnxSpeechToTextClient` | `ISpeechToTextClient` | `MLNet.ASR.OnnxGenAI/OnnxSpeechToTextClient.cs` |
 | `OnnxTextToSpeechClient` | `ITextToSpeechClient` | `TTS/OnnxTextToSpeechClient.cs` |
 
+### Adding a New TTS Backend via `IOnnxTtsSynthesizer`
+
+The TTS architecture uses an **internal interface** (`IOnnxTtsSynthesizer`) to decouple the MEAI client from specific TTS model implementations. This is how KittenTTS was added without modifying the existing `OnnxTextToSpeechClient`.
+
+**The pattern:**
+
+```
+OnnxTextToSpeechClient (MEAI ITextToSpeechClient)
+    └── IOnnxTtsSynthesizer (internal interface)
+            ├── OnnxSpeechT5TtsTransformer    (3-model encoder-decoder-vocoder)
+            └── OnnxKittenTtsTransformer       (single-model, espeak-ng phonemization)
+            └── YourNewTtsTransformer          (your new backend)
+```
+
+**Step 1: Implement `IOnnxTtsSynthesizer`**
+
+The internal interface is minimal:
+
+```csharp
+internal interface IOnnxTtsSynthesizer : IDisposable
+{
+    AudioData Synthesize(string text, TextToSpeechOptions? options);
+    string ProviderName { get; }
+    Uri? ProviderUri { get; }
+    string? ModelId { get; }
+}
+```
+
+Your transformer class should implement this explicitly (see `OnnxKittenTtsTransformer` as a reference):
+
+```csharp
+public class MyTtsTransformer : ITransformer, IOnnxTtsSynthesizer, IDisposable
+{
+    // ITransformer implementation for ML.NET pipeline usage
+    public IDataView Transform(IDataView input) { /* ... */ }
+    
+    // IOnnxTtsSynthesizer implementation for MEAI client usage
+    AudioData IOnnxTtsSynthesizer.Synthesize(string text, TextToSpeechOptions? options)
+    {
+        var voiceId = options?.VoiceId ?? _defaultVoice;
+        var speed = options?.Speed ?? 1.0f;
+        // Your synthesis logic here
+        return new AudioData(samples, sampleRate);
+    }
+    
+    string IOnnxTtsSynthesizer.ProviderName => "MyTTS";
+    string? IOnnxTtsSynthesizer.ProviderUri => "https://github.com/your/model";
+    string IOnnxTtsSynthesizer.ModelId => "my-tts-v1";
+}
+```
+
+**Step 2: Add a constructor overload to `OnnxTextToSpeechClient`**
+
+```csharp
+// In OnnxTextToSpeechClient.cs, add:
+public OnnxTextToSpeechClient(MyTtsOptions options)
+{
+    var mlContext = new MLContext();
+    var estimator = new MyTtsEstimator(mlContext, options);
+    _synthesizer = (IOnnxTtsSynthesizer)estimator.Fit(/* empty data */);
+}
+```
+
+This gives users the same `ITextToSpeechClient` interface regardless of which TTS backend they choose. Provider swapping is a one-line constructor change:
+
+```csharp
+// SpeechT5 backend
+using var client = new OnnxTextToSpeechClient(speechT5Options);
+
+// KittenTTS backend — same client class, same API
+using var client = new OnnxTextToSpeechClient(kittenTtsOptions);
+
+// Your backend — same again
+using var client = new OnnxTextToSpeechClient(myTtsOptions);
+```
+
+**Step 3: Add an extension method**
+
+```csharp
+// In MLContextExtensions.cs
+public static OnnxKittenTtsEstimator KittenTts(
+    this TransformsCatalog catalog, OnnxKittenTtsOptions options)
+    => new OnnxKittenTtsEstimator(CatalogUtils.GetEnvironment(catalog), options);
+```
+
+**Why this pattern?** The `IOnnxTtsSynthesizer` interface is intentionally `internal` — it's an implementation detail, not part of the public API. Users interact through either the ML.NET pipeline (`mlContext.Transforms.KittenTts(options)`) or the MEAI client (`new OnnxTextToSpeechClient(options)`). The internal interface is the bridge that connects these two worlds without creating a separate client class per backend.
+
 ---
 
 ## Pipeline Composition

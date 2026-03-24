@@ -44,15 +44,15 @@ samples/*/models/
 *.mlnet
 *.zip
 
-# Audio sample files (large)
+# Audio files (large)
 *.wav
 *.mp3
 *.flac
 *.ogg
+# Allow sample input audio, but not generated output
 !samples/**/*.wav
+**/output.wav
 
 # OS
 Thumbs.db
 .DS_Store
-
-artifacts/

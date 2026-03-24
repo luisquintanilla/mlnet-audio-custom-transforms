@@ -1,3 +1,4 @@
+using Microsoft.Extensions.AI;
 using Microsoft.ML;
 using MLNet.Audio.Core;
 using MLNet.AudioInference.Onnx;
@@ -83,15 +84,19 @@ var outputPath = "output.wav";
 AudioIO.SaveWav(outputPath, audio);
 Console.WriteLine($"  Saved: {outputPath}");
 
-// --- 2. ITextToSpeechClient (MEAI-style) ---
-Console.WriteLine("\n--- 2. ITextToSpeechClient ---\n");
+// --- 2. ITextToSpeechClient (official MEAI) ---
+Console.WriteLine("\n--- 2. ITextToSpeechClient (MEAI) ---\n");
 
+#pragma warning disable AIEXP001, MEAI001 // ITextToSpeechClient is experimental
 using var ttsClient = new OnnxTextToSpeechClient(options);
-Console.WriteLine($"  Provider: {ttsClient.Metadata.ProviderName}");
-Console.WriteLine($"  Model: {ttsClient.Metadata.DefaultModelId}");
+var metadata = ttsClient.GetService<TextToSpeechClientMetadata>();
+Console.WriteLine($"  Provider: {metadata?.ProviderName}");
+Console.WriteLine($"  Model: {metadata?.DefaultModelId}");
 
 var response = await ttsClient.GetAudioAsync("This is the MEAI client.");
-Console.WriteLine($"  Result: {response.Duration.TotalSeconds:F2}s audio, voice={response.Voice}");
+var audioContent = response.Contents.OfType<DataContent>().FirstOrDefault();
+Console.WriteLine($"  Result: {audioContent?.Data.Length ?? 0} WAV bytes, model={response.ModelId}");
+#pragma warning restore AIEXP001, MEAI001
 
 // --- 3. ML.NET Pipeline ---
 Console.WriteLine("\n--- 3. ML.NET Pipeline ---\n");
@@ -131,11 +136,12 @@ static void ShowApiPatterns()
         AudioIO.SaveWav("output.wav", audio);
     """);
 
-    Console.WriteLine("\n--- Pattern 2: ITextToSpeechClient (MEAI-style) ---");
+    Console.WriteLine("\n--- Pattern 2: ITextToSpeechClient (official MEAI) ---");
     Console.WriteLine("""
         using var client = new OnnxTextToSpeechClient(options);
         var response = await client.GetAudioAsync("Say something");
-        AudioIO.SaveWav("output.wav", response.Audio);
+        var audioContent = response.Contents.OfType<DataContent>().First();
+        File.WriteAllBytes("output.wav", audioContent.Data.ToArray());
     """);
 
     Console.WriteLine("\n--- Pattern 3: ML.NET Pipeline ---");

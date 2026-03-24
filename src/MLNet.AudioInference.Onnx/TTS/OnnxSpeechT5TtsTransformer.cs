@@ -1,4 +1,5 @@
 using System.Numerics.Tensors;
+using Microsoft.Extensions.AI;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.OnnxRuntime;
@@ -22,7 +23,7 @@ namespace MLNet.AudioInference.Onnx;
 /// Uses standard HuggingFace optimum-exported ONNX models (NeuML/txtai-speecht5-onnx).
 /// KV cache management follows the same pattern as OnnxWhisperTransformer.
 /// </summary>
-public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
+public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IOnnxTtsSynthesizer
 {
     private readonly MLContext _mlContext;
     private readonly OnnxSpeechT5Options _options;
@@ -142,6 +143,26 @@ public sealed class OnnxSpeechT5TtsTransformer : ITransformer, IDisposable
     void ICanSaveModel.Save(ModelSaveContext ctx)
         => throw new NotSupportedException(
             "OnnxSpeechT5TtsTransformer wraps ONNX sessions and cannot be serialized.");
+
+    // ========================================================================
+    // IOnnxTtsSynthesizer — bridges this transformer to OnnxTextToSpeechClient
+    // ========================================================================
+
+    string IOnnxTtsSynthesizer.ProviderName => "OnnxSpeechT5";
+
+    Uri? IOnnxTtsSynthesizer.ProviderUri =>
+        new("https://huggingface.co/microsoft/speecht5_tts");
+
+    string? IOnnxTtsSynthesizer.ModelId =>
+        Path.GetFileName(Path.GetDirectoryName(_options.EncoderModelPath)) ?? "speecht5";
+
+    AudioData IOnnxTtsSynthesizer.Synthesize(string text, TextToSpeechOptions? options)
+    {
+        float[]? speakerEmbedding = null;
+        if (options?.AdditionalProperties?.TryGetValue("speakerEmbedding", out var val) == true && val is float[] emb)
+            speakerEmbedding = emb;
+        return Synthesize(text, speakerEmbedding);
+    }
 
     public void Dispose()
     {
