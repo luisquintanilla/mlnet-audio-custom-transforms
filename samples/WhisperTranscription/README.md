@@ -42,6 +42,30 @@ This repository provides **three approaches** to the same ASR task (Whisper spee
 
 **This sample is the sweet spot for most local ASR use cases.** You get local execution (no cloud dependency, no data leaves your machine) with a simple API, without needing to understand Whisper's internal encoder-decoder architecture.
 
+### Abstraction Layers
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ MEAI: ISpeechToTextClient                                │
+│   OnnxSpeechToTextClient — same interface as Azure/OpenAI│
+│   Middleware pipeline: logging, OpenTelemetry, caching   │
+├─────────────────────────────────────────────────────────┤
+│ ML.NET: ITransformer / IEstimator<T>                     │
+│   OnnxSpeechToTextTransformer — composable pipeline      │
+│   mlContext.Transforms.OnnxSpeechToText(options)         │
+├─────────────────────────────────────────────────────────┤
+│ ONNX Runtime GenAI                                       │
+│   Handles encoder → decoder loop → KV cache internally   │
+│   You provide mel features, receive token IDs            │
+├─────────────────────────────────────────────────────────┤
+│ Audio Primitives (MLNet.Audio.Core)                      │
+│   WhisperFeatureExtractor (mel spectrogram)              │
+│   AudioData, AudioIO (WAV I/O, resampling)              │
+└─────────────────────────────────────────────────────────┘
+```
+
+ORT GenAI sits between you and the raw ONNX models, handling the complex decoder loop. Compare with [WhisperRawOnnx](../WhisperRawOnnx/) where YOU manage the decoder loop, KV cache, and token sampling directly.
+
 ### Model Format: ORT GenAI-Specific Export
 
 ORT GenAI requires models in its **own export format**, distinct from a plain ONNX export. The model directory must contain:

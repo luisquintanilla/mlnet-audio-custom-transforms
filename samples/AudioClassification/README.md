@@ -16,12 +16,14 @@ Audio classification uses a **3-stage ML.NET pipeline** pattern — the same dec
 │   Raw audio → Mel spectrogram (128 bins, 1024 frames)   │
 ├─────────────────────────────────────────────────────────┤
 │ Stage 2: OnnxAudioScoringTransformer                     │
-│   Mel spectrogram → Raw ONNX model output (logits)      │
+│   Mel spectrogram → ONNX Runtime inference → logits      │
 ├─────────────────────────────────────────────────────────┤
 │ Stage 3: AudioClassificationPostProcessingTransformer    │
 │   Logits → Softmax → Labels + Probabilities              │
 └─────────────────────────────────────────────────────────┘
 ```
+
+All three stages implement `ITransformer` (via `IEstimator<T>.Fit()`), which means they compose via ML.NET's lazy pipeline — computation only happens when you iterate the output `IDataView`. This is the same `Fit()`/`Transform()` pattern used across all ML.NET transforms.
 
 The **single-line facade** (`mlContext.Transforms.OnnxAudioClassification(options)`) wires all three stages internally. The **composed pipeline** approach lets you replace or customize any stage — for example, swapping the feature extractor for a different spectrogram configuration.
 

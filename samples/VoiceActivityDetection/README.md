@@ -107,6 +107,27 @@ Audio stream
   SpeechSegment[] (Start, End, Confidence)
 ```
 
+### Abstraction Layers
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Custom Interface: IVoiceActivityDetector                 │
+│   DetectSpeechAsync() → IAsyncEnumerable<SpeechSegment>  │
+├─────────────────────────────────────────────────────────┤
+│ ML.NET: ITransformer / IEstimator<T>                     │
+│   OnnxVadTransformer — composable via .Fit() / .Transform()
+│   Enables pipeline composition with other transforms     │
+├─────────────────────────────────────────────────────────┤
+│ ONNX Runtime: InferenceSession                           │
+│   Silero VAD model (stateful LSTM, ~2 MB)               │
+├─────────────────────────────────────────────────────────┤
+│ Audio Primitives (MLNet.Audio.Core)                      │
+│   AudioData, AudioIO (WAV I/O, resampling)              │
+└─────────────────────────────────────────────────────────┘
+```
+
+Note: VAD doesn't use MEAI interfaces (no `IVoiceActivityDetector` in Microsoft.Extensions.AI yet), MEDI, or ML.Tokenizers. The `IVoiceActivityDetector` is a library-specific interface — a natural candidate for future MEAI standardization.
+
 ### The Model: Silero VAD
 
 [Silero VAD](https://github.com/snakers4/silero-vad) is purpose-built for voice activity detection:

@@ -94,8 +94,9 @@ KittenTTS is built from five layers, each using standard .NET abstractions:
 │   ITextToSpeechClient → OnnxTextToSpeechClient          │
 │   (Same interface for KittenTTS, SpeechT5, or cloud)    │
 ├─────────────────────────────────────────────────────────┤
-│ Layer 1: ML.NET Custom Transforms                       │
-│   OnnxKittenTtsTransformer : IOnnxTtsSynthesizer        │
+│ Layer 1: ML.NET Custom Transforms (IEstimator/ITransformer)│
+│   OnnxKittenTtsTransformer : ITransformer, IOnnxTtsSynthesizer
+│   Enables .Fit() / .Transform() pipeline composition     │
 ├─────────────────────────────────────────────────────────┤
 │ Layer 0: ONNX Runtime                                   │
 │   Single-pass neural network inference                  │
@@ -104,6 +105,7 @@ KittenTTS is built from five layers, each using standard .NET abstractions:
 
 This layered design isn't accidental — each layer aligns with a real .NET ecosystem abstraction:
 
+- **Pipeline composition** — `OnnxKittenTtsTransformer` implements ML.NET's `ITransformer` interface, which means it plugs into the standard `.Fit()` / `.Transform()` pipeline. You can compose it with other transforms (e.g., text preprocessing → TTS → audio post-processing) using `mlContext.Transforms.KittenTts(options)`. The `IEstimator<T>` pattern separates configuration (estimator) from execution (transformer) — `.Fit()` creates the transformer, `.Transform()` runs inference.
 - **Provider abstraction** — `ITextToSpeechClient` from Microsoft.Extensions.AI means your consuming code doesn't know or care whether KittenTTS, SpeechT5, Azure Speech, or OpenAI is doing the synthesis. `OnnxTextToSpeechClient` wraps any `IOnnxTtsSynthesizer` — swap from KittenTTS to SpeechT5 with a one-line options change. This is the same pattern used for `ISpeechToTextClient` in the ASR samples.
 - **Composability** — `TtsSentenceChunker` and `EspeakPhonemizationProcessor` implement MEDI's `IngestionChunker<string>` and `IngestionChunkProcessor<string>`. They can be used independently or plugged into any pipeline that works with MEDI abstractions.
 - **Ecosystem alignment** — the same `IngestionChunker<string>` abstraction that chunks documents for text RAG also chunks text for TTS. If you've used MEDI for search indexing, the chunking model is already familiar.

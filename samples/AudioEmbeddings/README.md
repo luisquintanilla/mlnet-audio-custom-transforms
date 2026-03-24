@@ -21,9 +21,6 @@ Audio embeddings sit at the **intersection of three abstraction layers**:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Layer 3: DataIngestion                                    │
-│   AudioEmbeddingChunkProcessor uses embeddings for RAG   │
-├─────────────────────────────────────────────────────────┤
 │ Layer 2: MEAI (Microsoft.Extensions.AI)                  │
 │   IEmbeddingGenerator<AudioData, Embedding<float>>       │
 ├─────────────────────────────────────────────────────────┤
@@ -35,7 +32,7 @@ Audio embeddings sit at the **intersection of three abstraction layers**:
 └─────────────────────────────────────────────────────────┘
 ```
 
-This sample demonstrates Layers 0-2. The [AudioDataIngestion](../AudioDataIngestion/) sample shows how Layer 3 builds on top of these embeddings for full RAG pipelines.
+The [AudioDataIngestion](../AudioDataIngestion/) sample shows how Layer 3 (Microsoft.Extensions.DataIngestion) builds on top of these embeddings for full RAG pipelines.
 
 ---
 
@@ -100,6 +97,8 @@ Once you have two embedding vectors, you measure their closeness with **cosine s
 | **-1.0** | Opposite direction → maximally dissimilar |
 
 When embeddings are L2-normalized (as this sample does by default), cosine similarity simplifies to the dot product, which is extremely fast.
+
+> **Under the hood**, similarity is computed using `TensorPrimitives.CosineSimilarity()` from `System.Numerics.Tensors` — a SIMD-accelerated vector math API that makes these comparisons efficient even at scale.
 
 ### The Model: CLAP
 

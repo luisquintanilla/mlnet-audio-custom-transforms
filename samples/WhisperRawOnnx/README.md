@@ -70,6 +70,32 @@ WhisperTokenizer                 ← Tokenizer primitive (Layer 0)
 Transcription text / segments
 ```
 
+### Abstraction Layers
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ MEAI: ISpeechToTextClient (optional wrapper)             │
+│   OnnxWhisperSpeechToTextClient — provider-agnostic API  │
+├─────────────────────────────────────────────────────────┤
+│ ML.NET: ITransformer / IEstimator<T>                     │
+│   OnnxWhisperTransformer — composable pipeline           │
+│   Exposes Transcribe() and TranscribeWithTimestamps()    │
+├─────────────────────────────────────────────────────────┤
+│ System.Numerics.Tensors: TensorPrimitives               │
+│   SoftMax (temperature sampling), IndexOfMax (greedy)    │
+│   SIMD-accelerated token selection in decoder loop       │
+├─────────────────────────────────────────────────────────┤
+│ ONNX Runtime: InferenceSession                           │
+│   Encoder session + Decoder session (with KV cache)      │
+├─────────────────────────────────────────────────────────┤
+│ Audio Primitives (MLNet.Audio.Core)                      │
+│   WhisperFeatureExtractor (mel spectrogram)              │
+│   WhisperTokenizer (BPE + 1700 special tokens)           │
+└─────────────────────────────────────────────────────────┘
+```
+
+This is the deepest sample in the repo — it touches every layer from raw audio to decoded text. The `TensorPrimitives` usage is architecturally significant here: the decoder loop calls `TensorPrimitives.SoftMax()` and `TensorPrimitives.IndexOfMax()` on every generated token, making SIMD acceleration a real performance factor.
+
 ### KV Cache Explained
 
 The KV (Key-Value) cache is the single most important optimization for autoregressive generation. Here's why:

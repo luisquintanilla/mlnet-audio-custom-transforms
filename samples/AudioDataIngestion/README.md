@@ -321,6 +321,8 @@ var results = allChunks
 
 This is the retrieval phase of audio RAG. In production, you'd store embeddings in a vector database (e.g., Qdrant, Pinecone, Azure AI Search) and query it, but the similarity math is the same.
 
+> **Under the hood**: The similarity search uses `TensorPrimitives.CosineSimilarity()` from `System.Numerics.Tensors` — .NET's SIMD-accelerated vector math API. This is the same API used in text embedding pipelines, reinforcing the modality-agnostic design: audio embeddings are just float arrays, and vector operations work identically regardless of what produced them.
+
 ### Synthetic Audio Patterns
 
 The four test signals are deliberately chosen to create meaningful similarity structure:
