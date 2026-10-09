@@ -1,6 +1,8 @@
 # Models Guide
 
-A practical guide to downloading, configuring, and using ONNX models with every audio transform in this project. Follow the instructions here to get any model running immediately.
+A practical guide to downloading, configuring, and using models with every
+audio transform in this project. Most transforms use ONNX; Whistle uses a
+Cactus `.cact` model plus a separately supplied Needle shared library.
 
 ---
 
@@ -8,7 +10,7 @@ A practical guide to downloading, configuring, and using ONNX models with every 
 
 1. [Overview](#overview)
 2. [Model Download Methods](#model-download-methods)
-3. [Speech-to-Text Models (Whisper)](#speech-to-text-models-whisper)
+3. [Speech-to-Text Models](#speech-to-text-models)
 4. [Audio Classification Models](#audio-classification-models)
 5. [Audio Embedding Models](#audio-embedding-models)
 6. [Voice Activity Detection Models](#voice-activity-detection-models)
@@ -22,7 +24,12 @@ A practical guide to downloading, configuring, and using ONNX models with every 
 
 ## Overview
 
-All transforms use ONNX models downloaded from HuggingFace. Each transform expects a specific model format — some use a single `.onnx` file, others need a directory with multiple files (encoder, decoder, vocoder, tokenizer). This guide covers every supported model, how to download it, what files you need, and the exact C# options to configure.
+Most transforms use ONNX models downloaded from HuggingFace. Whistle uses a
+single Cactus `.cact` model and a separately supplied Needle shared library.
+Each transform expects a specific model format — some use a single `.onnx`
+file, others need a directory with multiple files (encoder, decoder, vocoder,
+tokenizer). This guide covers every supported model, how to download it, what
+files you need, and the exact C# options to configure.
 
 **Key principle:** Models are never bundled in this repository. You download them separately and point the options to the local path.
 
@@ -69,9 +76,11 @@ For any model, you can browse `https://huggingface.co/<repo-id>/tree/main` and d
 
 ---
 
-## Speech-to-Text Models (Whisper)
+## Speech-to-Text Models
 
-OpenAI's Whisper is a family of encoder-decoder models for automatic speech recognition. This project supports two approaches — each requires a different model format.
+OpenAI's Whisper is a family of encoder-decoder models for automatic speech
+recognition. This project also supports Cactus Compute Whistle, a separate
+native-backed ASR model with a `.cact` model format.
 
 ### Approach 1: ORT GenAI (`MLNet.ASR.OnnxGenAI`)
 
@@ -174,6 +183,43 @@ All Whisper variants use the same architecture — they differ in depth and widt
 - **Decoder:** Autoregressive with KV cache — see [architecture.md](architecture.md) for the two-phase decode pattern
 - **Output:** Token IDs decoded via `WhisperTokenizer` (BPE with 99+ language codes and 1501 timestamp tokens)
 - **Languages:** 99+ languages supported by multilingual models
+
+### Approach 3: Cactus Compute Whistle (`MLNet.ASR.Whistle`)
+
+Whistle is a small Apache-2.0 speech model distributed as a single `.cact` file.
+It runs through Cactus Compute's Needle native runtime rather than ONNX Runtime.
+The package supports Windows x64 and Linux x64 and requires the application to
+provide a shared library exposing the `needle.h` C ABI.
+
+```bash
+huggingface-cli download Cactus-Compute/whistle whistle.cact --local-dir models/whistle
+```
+
+```csharp
+using MLNet.ASR.Whistle;
+using MLNet.Audio.Core;
+
+var options = new WhistleOptions
+{
+    ModelPath = @"models\whistle\whistle.cact",
+    NativeLibraryPath = OperatingSystem.IsWindows()
+        ? @"native\libneedle3.dll"
+        : "/opt/whistle/libneedle3.so",
+    Language = null, // detect: en, de, fr, es, it, nl, or pl
+    WordTimestamps = true
+};
+
+using var transcriber = new WhistleTranscriber(options);
+var result = transcriber.Transcribe(AudioIO.LoadWav("speech.wav"));
+Console.WriteLine(result.Text);
+```
+
+The published `Cactus-Compute/needle3` repository provides platform static
+archives and headers. A static archive is not loadable by .NET, so this project
+does not pretend that the archive is a shared-library NuGet asset. Build or
+obtain a compatible shared bridge and configure `NativeLibraryPath` or
+`MLNET_WHISTLE_NATIVE_PATH`. See [the Whistle guide](whistle.md) for the ABI,
+runtime-global model constraint, redistribution, and ML.NET/MEAI examples.
 
 **Model-specific dimensions:**
 

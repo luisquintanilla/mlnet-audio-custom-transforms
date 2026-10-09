@@ -392,7 +392,10 @@ Whisper's vocabulary includes 1501 timestamp tokens covering 0.00s to 30.00s in 
 
 ### Three ASR Approaches Comparison
 
-The sample's `ShowApiPatterns()` method demonstrates all three approaches side-by-side:
+The sample's `ShowApiPatterns()` method demonstrates three approaches
+side-by-side. Cactus Whistle is documented separately because it requires a
+Needle native shared library:
+[`samples/WhistleTranscription`](../WhistleTranscription/).
 
 ```csharp
 // 1. Provider-agnostic (any ISpeechToTextClient)
@@ -417,7 +420,7 @@ var pipeline = mlContext.Transforms.OnnxWhisper(rawOnnxOptions);
 
 4. **Raw ONNX gives full control but requires understanding the decoder loop.** You manage the KV cache, choose the sampling strategy, and process the token stream. This is more work than ORT GenAI but gives you complete visibility and customizability.
 
-5. **All three ASR approaches are available in this repo.** Provider-agnostic for cloud APIs, ORT GenAI for easy local inference, and raw ONNX for full control — choose based on your needs.
+5. **These three ASR approaches are available in this sample.** Provider-agnostic for cloud APIs, ORT GenAI for easy local inference, and raw ONNX for full control — choose based on your needs. Cactus Whistle is an additional compact native-backed option.
 
 ---
 

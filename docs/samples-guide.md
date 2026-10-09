@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project includes 9 runnable samples demonstrating different audio AI tasks. Each sample gracefully handles missing models — showing API patterns and download instructions instead of crashing.
+The project includes 10 runnable samples demonstrating different audio AI tasks. Each sample gracefully handles missing models — showing API patterns and download instructions instead of crashing.
 
 ## Prerequisites
 
@@ -143,6 +143,34 @@ dotnet run
 ### Without model
 
 Shows API patterns with code examples and download instructions, then exits.
+
+## WhistleTranscription
+
+**Location:** `samples/WhistleTranscription/`
+**Task:** Local Cactus Compute Whistle ASR through Needle
+**Model needed:** `whistle.cact` plus a compatible Needle shared library
+
+### Setup
+
+```bash
+cd samples/WhistleTranscription
+huggingface-cli download Cactus-Compute/whistle whistle.cact --local-dir models
+dotnet run -- "models/whistle.cact" "speech.wav" "path/to/libneedle3.so"
+```
+
+Obtain a Whistle-capable Needle 3.1 or later shared library from the official
+Python wheel, or build one from the published static archive. The Windows x64
+and Linux x64 commands are in [whistle.md](whistle.md).
+
+Set `MLNET_WHISTLE_NATIVE_PATH` instead of passing the native library path when
+running on Windows x64 or Linux x64.
+
+### What it demonstrates
+
+- Direct `WhistleTranscriber` usage with automatic mono/16 kHz normalization
+- `WhistleSpeechToTextClient : ISpeechToTextClient`
+- Word timestamps, language detection, and native decoder metadata
+- Graceful setup instructions when model/audio files are absent
 
 ## WhisperRawOnnx
 

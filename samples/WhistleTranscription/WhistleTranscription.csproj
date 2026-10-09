@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);MEAI001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MLNet.ASR.Whistle\MLNet.ASR.Whistle.csproj" />
+    <ProjectReference Include="..\..\src\MLNet.Audio.Core\MLNet.Audio.Core.csproj" />
+  </ItemGroup>
+
+</Project>

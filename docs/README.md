@@ -16,18 +16,20 @@ If you're a .NET developer new to audio processing and audio ML, start here:
 ### For Developers
 Ready to use the transforms in your projects:
 
-4. **[Transforms Guide](transforms-guide.md)** — Complete reference for every transform: Audio Classification, Embeddings, VAD, Speech-to-Text (3 approaches), Text-to-Speech. Includes all options, code examples, and supported models.
+4. **[Transforms Guide](transforms-guide.md)** — Complete reference for every transform: Audio Classification, Embeddings, VAD, Speech-to-Text (4 approaches), Text-to-Speech. Includes all options, code examples, and supported models.
 
 5. **[Models Guide](models-guide.md)** — Which models to use, how to download them, architecture details, performance tradeoffs, and directory layout.
 
 6. **[MEAI Integration](meai-integration.md)** — How to use these transforms with Microsoft.Extensions.AI interfaces (IEmbeddingGenerator, ISpeechToTextClient, ITextToSpeechClient), dependency injection, and middleware patterns.
 
+7. **[Whistle speech-to-text](whistle.md)** — Use the Cactus Compute Whistle `.cact` model through the native Needle runtime on Windows x64 and Linux x64.
+
 ### For Contributors
 Want to extend the framework:
 
-7. **[Extending the Framework](extending.md)** — Step-by-step guide to adding new models, creating feature extractors, implementing MEAI interfaces, and the KV cache pattern.
+8. **[Extending the Framework](extending.md)** — Step-by-step guide to adding new models, creating feature extractors, implementing MEAI interfaces, and the KV cache pattern.
 
-8. **[Master Plan](plan.md)** — The full implementation roadmap, design decisions, and future vision.
+9. **[Master Plan](plan.md)** — The full implementation roadmap, design decisions, and future vision.
 
 ### Quick Links
 
@@ -39,6 +41,7 @@ Want to extend the framework:
 | Speech-to-Text (Provider) | `SpeechToText` | `ISpeechToTextClient` | `samples/SpeechToText` |
 | Speech-to-Text (ORT GenAI) | `OnnxSpeechToText` | `ISpeechToTextClient` | `samples/WhisperTranscription` |
 | Speech-to-Text (Raw ONNX) | `OnnxWhisper` | `ISpeechToTextClient` | `samples/WhisperRawOnnx` |
+| Speech-to-Text (Whistle) | `WhistleSpeechToText` | `ISpeechToTextClient` | `samples/WhistleTranscription` |
 | Text-to-Speech (SpeechT5) | `SpeechT5Tts` | `ITextToSpeechClient` | `samples/TextToSpeech` |
 | Text-to-Speech (KittenTTS) | `KittenTts` | `ITextToSpeechClient` | `samples/KittenTTS` |
 | Audio DataIngestion | `AudioDocumentReader` / `AudioSegmentChunker` / `AudioEmbeddingChunkProcessor` | `IEmbeddingGenerator` | `samples/AudioDataIngestion` |
@@ -46,8 +49,8 @@ Want to extend the framework:
 ### Project Status
 
 ✅ 7 audio tasks implemented
-✅ 5 source packages (Audio.Core, Audio.Tokenizers, AudioInference.Onnx, ASR.OnnxGenAI, Audio.DataIngestion)
-✅ 9 runnable samples
+✅ 6 source packages (Audio.Core, Audio.Tokenizers, AudioInference.Onnx, ASR.OnnxGenAI, ASR.Whistle, Audio.DataIngestion)
+✅ 10 runnable samples
 ✅ MEAI integration (IEmbeddingGenerator, ISpeechToTextClient, ITextToSpeechClient)
 ✅ Microsoft.Extensions.DataIngestion integration (Reader → Chunker → Processor for audio)
 ✅ Microsoft.ML.Tokenizers (SentencePiece for SpeechT5 via Audio.Tokenizers, custom WhisperTokenizer)

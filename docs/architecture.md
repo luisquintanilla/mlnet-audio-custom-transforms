@@ -85,6 +85,27 @@ Separate package for Whisper speech-to-text via ONNX Runtime GenAI. ORT GenAI ha
 
 **Why separate?** ORT GenAI has different native dependencies (platform-specific CPU/CUDA/DirectML packages) that would force all `MLNet.AudioInference.Onnx` consumers to take that dependency even if they only need classification or embeddings.
 
+### Layer 2: Cactus Whistle ASR (`MLNet.ASR.Whistle`)
+
+Whistle is a second, intentionally separate local ASR backend. It consumes the
+Whistle `.cact` format through the Cactus Needle C ABI rather than ONNX Runtime.
+The package references only `MLNet.Audio.Core`, ML.NET, and MEAI abstractions;
+applications provide the platform-specific shared native library.
+
+| Type | Description |
+|------|-------------|
+| `WhistleTranscriber` | Direct API that normalizes audio, invokes Needle, and parses text/word metadata |
+| `WhistleSpeechToTextTransformer` | Eager ML.NET transformer for `VBuffer<float>` audio columns |
+| `WhistleSpeechToTextClient` | `ISpeechToTextClient` implementation with response metadata |
+| `WhistleOptions` | `.cact` model, native library, language, keyword, timestamp, and buffer settings |
+| `MLContextExtensions` | `mlContext.Transforms.WhistleSpeechToText(options)` |
+
+Needle owns one process-global speech model and is not thread-safe. The managed
+runtime therefore keeps one model/native-library identity per process and holds
+a process-wide lock for each native call. This is stricter than the ONNX
+backends, but prevents concurrent calls from corrupting Needle's global state
+and fails explicitly when a second model is requested.
+
 ### Layer 3: MEAI Integration (across packages)
 
 [Microsoft.Extensions.AI](https://learn.microsoft.com/dotnet/ai/microsoft-extensions-ai) abstractions bridged throughout:
@@ -94,6 +115,7 @@ Separate package for Whisper speech-to-text via ONNX Runtime GenAI. ORT GenAI ha
 | `IEmbeddingGenerator<AudioData, Embedding<float>>` | `OnnxAudioEmbeddingGenerator` | MLNet.AudioInference.Onnx |
 | `ISpeechToTextClient` | `OnnxSpeechToTextClient` | MLNet.ASR.OnnxGenAI |
 | `ISpeechToTextClient` | `OnnxWhisperSpeechToTextClient` | MLNet.AudioInference.Onnx |
+| `ISpeechToTextClient` | `WhistleSpeechToTextClient` | MLNet.ASR.Whistle |
 | `ITextToSpeechClient` | `OnnxTextToSpeechClient` | MLNet.AudioInference.Onnx |
 | `IVoiceActivityDetector` (custom) | `OnnxVadTransformer` | MLNet.AudioInference.Onnx |
 
@@ -260,9 +282,9 @@ SpeechT5 (TTS): text → tokenize → encoder → decoder(KV) → mel frames →
 
 Both use the same KV cache pattern; the decoder loop differs only in what it produces (token IDs vs. mel spectrogram frames) and its stopping condition (end-of-text token vs. stop probability threshold).
 
-## Three ASR Approaches
+## Four ASR Approaches
 
-The repository provides three approaches to speech-to-text, each optimizing for different trade-offs:
+The repository provides four approaches to speech-to-text, each optimizing for different trade-offs:
 
 ### 1. Provider-agnostic (`SpeechToTextClientTransformer`)
 
@@ -289,7 +311,26 @@ var pipeline = mlContext.Transforms.OnnxSpeechToText(new OnnxSpeechToTextOptions
 
 **Best for:** Simple local deployment, minimal code, when you don't need fine-grained control over the decode loop.
 
-### 3. Raw ONNX (`OnnxWhisperTransformer` in `MLNet.AudioInference.Onnx`)
+### 3. Cactus Whistle (`WhistleTranscriber` in `MLNet.ASR.Whistle`)
+
+Whistle is a small native-backed local model. It runs the Cactus `.cact`
+format through the Needle C ABI and exposes language, keyword, and word
+timestamp controls.
+
+```csharp
+using var transcriber = new WhistleTranscriber(new WhistleOptions
+{
+    ModelPath = "models/whistle.cact",
+    NativeLibraryPath = "native/libneedle3.so",
+    WordTimestamps = true
+});
+var result = transcriber.Transcribe(audio);
+```
+
+**Best for:** Small local deployments when a compatible Needle shared library
+is available and a native runtime is acceptable.
+
+### 4. Raw ONNX (`OnnxWhisperTransformer` in `MLNet.AudioInference.Onnx`)
 
 Manual encoder/decoder/KV cache with `WhisperFeatureExtractor`, `WhisperTokenizer`, and `WhisperKvCacheManager`.
 
@@ -304,12 +345,13 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
 
 **Best for:** Full control, custom sampling strategies, using all audio primitives, and understanding the complete pipeline end-to-end.
 
-### Why three?
+### Why four?
 
 | Approach | Runtime dependency | Control level | Code complexity | Decode loop managed by |
 |----------|-------------------|---------------|-----------------|----------------------|
 | Provider-agnostic | None (pluggable) | Low | Low | Provider |
 | ORT GenAI | ORT GenAI native libs | Medium | Low | ORT GenAI |
+| Cactus Whistle | Needle native shared library | Medium | Low | Needle |
 | Raw ONNX | ORT Managed only | Full | High | Our code (`WhisperKvCacheManager`) |
 
 ## Package Dependency Graph
