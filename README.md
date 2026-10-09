@@ -12,6 +12,7 @@ Multi-task audio inference transforms for ML.NET using local ONNX models. Brings
 | `MLNet.Audio.Tokenizers` | Text tokenizer extensions for audio models: `SentencePieceCharTokenizer` | Microsoft.ML.Tokenizers |
 | `MLNet.AudioInference.Onnx` | ML.NET transforms: classification, embeddings, VAD, raw ONNX ASR/TTS | Microsoft.ML, OnnxRuntime, ML.Tokenizers, MEAI |
 | `MLNet.ASR.OnnxGenAI` | Local Whisper speech-to-text via ORT GenAI | Microsoft.ML, OnnxRuntimeGenAI, MEAI |
+| `MLNet.ASR.Whistle` | Local speech-to-text via Cactus Compute Whistle | Microsoft.ML, Cactus Needle native runtime, MEAI |
 | `MLNet.Audio.DataIngestion` | DataIngestion components: audio document reader, chunker, embedding processor | DataIngestion.Abstractions, MEAI, Audio.Core |
 
 ## Supported Audio Tasks
@@ -23,6 +24,7 @@ Multi-task audio inference transforms for ML.NET using local ONNX models. Brings
 | Voice Activity Detection | ✅ | `OnnxVadTransformer` | `IVoiceActivityDetector` (custom) |
 | Speech-to-Text (Provider) | ✅ | `SpeechToTextClientTransformer` | `ISpeechToTextClient` (any provider) |
 | Speech-to-Text (ORT GenAI) | ✅ | `OnnxSpeechToTextTransformer`, `OnnxSpeechToTextClient` | `ISpeechToTextClient` |
+| Speech-to-Text (Whistle) | ✅ | `WhistleSpeechToTextTransformer`, `WhistleTranscriber` | `ISpeechToTextClient` |
 | Speech-to-Text (Raw ONNX) | ✅ | `OnnxWhisperTransformer`, `OnnxWhisperSpeechToTextClient` | `ISpeechToTextClient` |
 | Text-to-Speech (SpeechT5) | ✅ | `OnnxSpeechT5TtsTransformer`, `OnnxTextToSpeechClient` | `ITextToSpeechClient` |
 | Text-to-Speech (KittenTTS) | ✅ | `OnnxTextToSpeechClient` via `OnnxKittenTtsOptions` | `ITextToSpeechClient` |
@@ -32,6 +34,7 @@ Multi-task audio inference transforms for ML.NET using local ONNX models. Brings
 ```csharp
 using Microsoft.ML;
 using MLNet.Audio.Core;
+using MLNet.ASR.Whistle;
 using MLNet.AudioInference.Onnx;
 
 var mlContext = new MLContext();
@@ -92,6 +95,15 @@ var pipeline = mlContext.Transforms.OnnxWhisper(new OnnxWhisperOptions
     DecoderModelPath = "models/whisper-base/decoder_model_merged.onnx",
     Language = "en"
 });
+
+// --- Speech-to-Text (Cactus Compute Whistle) ---
+var whistleOptions = new WhistleOptions
+{
+    ModelPath = "models/whistle.cact",
+    NativeLibraryPath = "native/libneedle3.so",
+    WordTimestamps = true
+};
+using var whistleClient = new WhistleSpeechToTextClient(whistleOptions);
 
 // --- Text-to-Speech (SpeechT5) ---
 var pipeline = mlContext.Transforms.SpeechT5Tts(new OnnxSpeechT5Options
@@ -180,6 +192,7 @@ See [Architecture Guide](docs/architecture.md) for the full layered design.
 | [`VoiceActivityDetection`](samples/VoiceActivityDetection) | VAD | Detect speech segments using Silero VAD |
 | [`SpeechToText`](samples/SpeechToText) | STT | Provider-agnostic ASR patterns + multi-modal pipeline |
 | [`WhisperTranscription`](samples/WhisperTranscription) | STT | Local Whisper via ORT GenAI |
+| [`WhistleTranscription`](samples/WhistleTranscription) | STT | Local Cactus Compute Whistle via native Needle |
 | [`WhisperRawOnnx`](samples/WhisperRawOnnx) | STT | Full-control Whisper with manual KV cache |
 | [`TextToSpeech`](samples/TextToSpeech) | TTS | SpeechT5 encoder-decoder-vocoder synthesis |
 | [`KittenTTS`](samples/KittenTTS) | TTS | Lightweight KittenTTS with espeak-ng phonemization |
@@ -233,6 +246,7 @@ Published to [GitHub Packages](https://github.com/luisquintanilla?tab=packages&r
 - `MLNet.Audio.Tokenizers`
 - `MLNet.AudioInference.Onnx`
 - `MLNet.ASR.OnnxGenAI`
+- `MLNet.ASR.Whistle`
 - `MLNet.Audio.DataIngestion`
 
 Add the GitHub Packages source to your `nuget.config`:

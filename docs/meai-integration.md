@@ -12,7 +12,7 @@ This project integrates with [Microsoft.Extensions.AI](https://learn.microsoft.c
 |-----------|---------|------------|
 | `IChatClient` | Text generation | No |
 | `IEmbeddingGenerator<TInput, TEmbedding>` | Embeddings | Yes — `IEmbeddingGenerator<AudioData, Embedding<float>>` |
-| `ISpeechToTextClient` | Speech-to-text (experimental) | Yes — 3 implementations |
+| `ISpeechToTextClient` | Speech-to-text (experimental) | Yes — 4 implementations |
 | `ITextToSpeechClient` | Text-to-speech (experimental) | Yes — `OnnxTextToSpeechClient` (SpeechT5 + KittenTTS) |
 | `IImageGenerator` | Image generation (experimental) | No |
 
@@ -71,7 +71,7 @@ builder.Services.AddSingleton<IEmbeddingGenerator<AudioData, Embedding<float>>>(
 
 ## Speech-to-Text Clients
 
-Three `ISpeechToTextClient` implementations — all pluggable into MEAI middleware and DI:
+Four `ISpeechToTextClient` implementations — all pluggable into MEAI middleware and DI:
 
 ### 1. ORT GenAI Whisper (`MLNet.ASR.OnnxGenAI`)
 
@@ -131,6 +131,35 @@ await foreach (var update in client.GetStreamingTextAsync(stream))
     }
 }
 ```
+
+### 3. Cactus Whistle (`MLNet.ASR.Whistle`)
+
+`WhistleSpeechToTextClient : ISpeechToTextClient` uses the small Cactus Whistle
+`.cact` model through the Needle native runtime. It supports Windows x64 and
+Linux x64 when a compatible shared library is supplied.
+
+```csharp
+using Microsoft.Extensions.AI;
+using MLNet.ASR.Whistle;
+
+ISpeechToTextClient client = new WhistleSpeechToTextClient(new WhistleOptions
+{
+    ModelPath = "models/whistle/whistle.cact",
+    NativeLibraryPath = "native/libneedle3.so",
+    WordTimestamps = true
+});
+
+using var stream = File.OpenRead("speech.wav");
+var response = await client.GetTextAsync(stream);
+Console.WriteLine(response.Text);
+Console.WriteLine(response.AdditionalProperties["language"]);
+```
+
+The response metadata contains the detected language, decoder metrics, and
+word-level records. Whistle's native runtime is process-global and
+non-thread-safe; the package serializes native calls and rejects a second model
+or native-library identity in the same process. See [whistle.md](whistle.md)
+for shared-library setup and licensing.
 
 ### 3. Provider-Agnostic Wrapper (ML.NET Pipeline)
 

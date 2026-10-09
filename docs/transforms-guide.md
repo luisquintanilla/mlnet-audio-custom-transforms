@@ -11,11 +11,12 @@ A comprehensive reference for every audio transform in the MLNet.Audio project. 
 3. [Voice Activity Detection (VAD)](#voice-activity-detection-vad)
 4. [Speech-to-Text: Provider-Agnostic](#speech-to-text-provider-agnostic)
 5. [Speech-to-Text: ORT GenAI (Whisper)](#speech-to-text-ort-genai-whisper)
-6. [Speech-to-Text: Raw ONNX (Whisper)](#speech-to-text-raw-onnx-whisper)
-7. [Text-to-Speech: SpeechT5](#text-to-speech-speecht5)
-8. [Text-to-Speech: KittenTTS](#text-to-speech-kittentts)
-9. [Comparison: Three ASR Approaches](#comparison-three-asr-approaches)
-10. [Comparison: Two TTS Approaches](#comparison-two-tts-approaches)
+6. [Speech-to-Text: Cactus Whistle](#speech-to-text-cactus-whistle)
+7. [Speech-to-Text: Raw ONNX (Whisper)](#speech-to-text-raw-onnx-whisper)
+8. [Text-to-Speech: SpeechT5](#text-to-speech-speecht5)
+9. [Text-to-Speech: KittenTTS](#text-to-speech-kittentts)
+10. [Comparison: Four ASR Approaches](#comparison-four-asr-approaches)
+11. [Comparison: Two TTS Approaches](#comparison-two-tts-approaches)
 
 ---
 
@@ -616,6 +617,41 @@ Any Whisper model exported to ORT GenAI format:
 
 ---
 
+## Speech-to-Text: Cactus Whistle
+
+### What It Does
+
+Runs the 16.9 MB Cactus Whistle `.cact` model through the Needle native C ABI.
+The managed package handles WAV loading, mono conversion, resampling to 16 kHz,
+language detection, keyword biasing, and optional word timestamps.
+
+### Usage
+
+```csharp
+using MLNet.ASR.Whistle;
+
+var options = new WhistleOptions
+{
+    ModelPath = "models/whistle/whistle.cact",
+    NativeLibraryPath = "native/libneedle3.so",
+    WordTimestamps = true
+};
+
+using var transformer = new WhistleTranscriber(options);
+var result = transformer.Transcribe(AudioIO.LoadWav("speech.wav"));
+Console.WriteLine(result.Text);
+```
+
+Whistle supports `en`, `de`, `fr`, `es`, `it`, `nl`, and `pl`. Set
+`NativeLibraryPath` or `MLNET_WHISTLE_NATIVE_PATH` to a shared library exporting
+`needle_load`, `needle_last_error`, and `needle_transcribe`. Use a
+Whistle-capable Needle 3.1 or later engine; native binaries and model weights
+are not bundled in this repository. See [whistle.md](whistle.md) for official
+dynamic-artifact setup, the static-library build boundary, and runtime
+constraints.
+
+---
+
 ## Speech-to-Text: Raw ONNX (Whisper)
 
 ### What It Does
@@ -1076,35 +1112,34 @@ Need local TTS?
 
 ---
 
-## Comparison: Three ASR Approaches
+## Comparison: Four ASR Approaches
 
-| Aspect | Provider-Agnostic | ORT GenAI | Raw ONNX |
-|--------|-------------------|-----------|----------|
-| **Entry point** | `mlContext.Transforms.SpeechToText(client)` | `mlContext.Transforms.OnnxSpeechToText(options)` | `mlContext.Transforms.OnnxWhisper(options)` |
-| **Package** | `MLNet.AudioInference.Onnx` | `MLNet.ASR.OnnxGenAI` | `MLNet.AudioInference.Onnx` |
-| **Models** | Any cloud or local provider | ORT GenAI format | HuggingFace Optimum ONNX export |
-| **Complexity** | Lowest | Low | Highest |
-| **Control** | None (black box) | Medium | Full (KV cache, temperature, decoding) |
-| **Dependencies** | Just MEAI abstractions | `OnnxRuntimeGenAI` | `OnnxRuntime` + our primitives |
-| **KV Cache** | N/A (provider handles) | Managed by ORT GenAI internally | Manual (`WhisperKvCacheManager`) |
-| **Timestamps** | Provider-dependent | Yes (`TranscribeWithTimestamps`) | Yes (`TranscribeWithTimestamps` + `WhisperTokenizer`) |
-| **Feature extraction** | Provider handles | Ours (`WhisperFeatureExtractor`) or built-in | Ours (`WhisperFeatureExtractor`) |
-| **Temperature control** | N/A | Via ORT GenAI config | Direct (`Temperature` option, `TensorPrimitives.SoftMax`) |
-| **MEAI client** | ✅ The client itself | ✅ `OnnxSpeechToTextClient : ISpeechToTextClient` | ❌ Not directly |
-| **Best for** | Cloud APIs, provider swapping | Simple local deployment | Full control, research, learning |
+| Aspect | Provider-Agnostic | ORT GenAI | Cactus Whistle | Raw ONNX |
+|--------|-------------------|-----------|----------------|----------|
+| **Entry point** | `mlContext.Transforms.SpeechToText(client)` | `mlContext.Transforms.OnnxSpeechToText(options)` | `mlContext.Transforms.WhistleSpeechToText(options)` | `mlContext.Transforms.OnnxWhisper(options)` |
+| **Package** | `MLNet.AudioInference.Onnx` | `MLNet.ASR.OnnxGenAI` | `MLNet.ASR.Whistle` | `MLNet.AudioInference.Onnx` |
+| **Models** | Any cloud or local provider | ORT GenAI format | Cactus `.cact` | HuggingFace Optimum ONNX export |
+| **Complexity** | Lowest | Low | Low | Highest |
+| **Control** | None (black box) | Medium | Language, keywords, timestamps | Full (KV cache, temperature, decoding) |
+| **Dependencies** | Just MEAI abstractions | `OnnxRuntimeGenAI` | Cactus Needle shared library | `OnnxRuntime` + our primitives |
+| **KV Cache** | N/A (provider handles) | Managed by ORT GenAI internally | Native runtime | Manual (`WhisperKvCacheManager`) |
+| **Timestamps** | Provider-dependent | Yes (`TranscribeWithTimestamps`) | Yes (word timestamps) | Yes (`TranscribeWithTimestamps` + `WhisperTokenizer`) |
+| **MEAI client** | ✅ The client itself | ✅ `OnnxSpeechToTextClient` | ✅ `WhistleSpeechToTextClient` | ❌ Not directly |
+| **Best for** | Cloud APIs, provider swapping | Simple local deployment | Small local deployment | Full control, research, learning |
 
 ### Decision Flowchart
 
 ```
 Need ASR in your app?
   ├─ Using a cloud API (Azure, OpenAI)? → Provider-Agnostic
+  ├─ Need a small local native model? → Cactus Whistle
   ├─ Want simple local inference? → ORT GenAI
   └─ Need full control over decoding? → Raw ONNX
 ```
 
 ### Migration Between Approaches
 
-All three produce the same output column (`"Text"` by default), so downstream pipeline steps work unchanged:
+All local approaches produce the same output column (`"Text"` by default), so downstream pipeline steps work unchanged:
 
 ```csharp
 // Step 1: start with cloud

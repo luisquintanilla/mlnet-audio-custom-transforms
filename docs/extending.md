@@ -860,3 +860,18 @@ public class AudioTranscriptionChunkProcessor : IngestionChunkProcessor<AudioDat
 | `chunk.Metadata["embedding"]` for processor output | Keeps chunks enriched with computed data for downstream consumers |
 | Processor takes `IEmbeddingGenerator` (not concrete type) | Provider-agnostic: any MEAI-compatible embedding source works |
 | All methods return `IAsyncEnumerable` | Memory-efficient streaming for large audio files |
+---
+
+## Native-backed model extensions
+
+Whistle demonstrates the native-backed extension boundary. Keep native ABI
+details in an internal adapter (`IWhistleNativeApi`), normalize audio in the
+managed layer, and convert native error codes into managed exceptions with the
+runtime's last-error text. Do not expose pointers or `NativeLibrary` handles in
+the public ML.NET/MEAI API.
+
+Native runtimes may have process-global state and stricter concurrency
+requirements than ONNX Runtime. Document the model identity and serialization
+policy explicitly, and add fake-native contract tests before adding a real
+model smoke test. See [native/README.md](../native/README.md) for the Whistle
+shared-library build boundary.

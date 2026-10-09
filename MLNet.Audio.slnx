@@ -4,7 +4,11 @@
     <Project Path="src/MLNet.Audio.Tokenizers/MLNet.Audio.Tokenizers.csproj" />
     <Project Path="src/MLNet.AudioInference.Onnx/MLNet.AudioInference.Onnx.csproj" />
     <Project Path="src/MLNet.ASR.OnnxGenAI/MLNet.ASR.OnnxGenAI.csproj" />
+    <Project Path="src/MLNet.ASR.Whistle/MLNet.ASR.Whistle.csproj" />
     <Project Path="src/MLNet.Audio.DataIngestion/MLNet.Audio.DataIngestion.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MLNet.ASR.Whistle.Tests/MLNet.ASR.Whistle.Tests.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/AudioClassification/AudioClassification.csproj" />
@@ -12,6 +16,7 @@
     <Project Path="samples/VoiceActivityDetection/VoiceActivityDetection.csproj" />
     <Project Path="samples/SpeechToText/SpeechToText.csproj" />
     <Project Path="samples/WhisperTranscription/WhisperTranscription.csproj" />
+    <Project Path="samples/WhistleTranscription/WhistleTranscription.csproj" />
     <Project Path="samples/WhisperRawOnnx/WhisperRawOnnx.csproj" />
     <Project Path="samples/TextToSpeech/TextToSpeech.csproj" />
     <Project Path="samples/KittenTTS/KittenTTS.csproj" />

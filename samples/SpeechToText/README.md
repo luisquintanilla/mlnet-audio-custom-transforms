@@ -211,9 +211,12 @@ Raw PCM audio (float[], 16kHz)
 - Audio shorter than 30s is **zero-padded** to fill the 3000 frames
 - Audio longer than 30s is split via `ExtractChunked()` with optional overlap
 
-### The Three ASR Approaches Compared
+### The Three ASR Approaches Compared in This Sample
 
-This sample sits at the **highest abstraction level**. Here's how the three approaches compare:
+This sample sits at the **highest abstraction level**. Here's how the three
+providers wired into the sample compare. The repository also includes the
+native-backed Cactus Whistle path; see
+[`samples/WhistleTranscription`](../WhistleTranscription/).
 
 | Aspect | `SpeechToText` (this sample) | `WhisperTranscription` | `WhisperRawOnnx` |
 |---|---|---|---|
@@ -235,7 +238,7 @@ This sample sits at the **highest abstraction level**. Here's how the three appr
 
 3. **The same `ISpeechToTextClient` interface works with cloud AND local providers.** Azure Speech and a local ONNX Whisper model both implement the same contract.
 
-4. **This sample + WhisperTranscription + WhisperRawOnnx show the same task at three abstraction levels** — from "I don't care how it works" (this sample) to "I control every token" (WhisperRawOnnx).
+4. **This sample + WhisperTranscription + WhisperRawOnnx show the same task at three abstraction levels** — from "I don't care how it works" (this sample) to "I control every token" (WhisperRawOnnx). Cactus Whistle is available as a separate native-backed local option.
 
 ## Going Further
 

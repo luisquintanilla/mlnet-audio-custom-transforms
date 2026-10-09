@@ -30,14 +30,15 @@ But Whisper is an **encoder-decoder** model. Transcription requires an autoregre
 
 The tradeoff: ORT GenAI requires models exported in a **specific format** with a `genai_config.json` manifest (produced by [Olive](https://github.com/microsoft/Olive) or [optimum](https://huggingface.co/docs/optimum/)). You can't point it at an arbitrary ONNX file.
 
-### The Three ASR Approaches
+### The Four ASR Approaches
 
-This repository offers three distinct paths to speech-to-text, forming a **convenience-vs-control spectrum**:
+This repository offers four distinct paths to speech-to-text, forming a **convenience-vs-control spectrum**:
 
 | Approach | Package | What It Does | When to Use It |
 |---|---|---|---|
 | **Provider-Agnostic** | `MLNet.AudioInference.Onnx` | `SpeechToTextClientTransformer` wraps any `ISpeechToTextClient` — Azure, OpenAI, local, etc. | Cloud ASR, swappable providers, no local model needed |
 | **ORT GenAI** (this package) | `MLNet.ASR.OnnxGenAI` | `OnnxSpeechToTextTransformer` uses ORT GenAI to run Whisper locally with the decoder loop handled by native code | Simple local deployment — you want Whisper on-device without managing the decoder yourself |
+| **Cactus Whistle** | `MLNet.ASR.Whistle` | `WhistleTranscriber` runs a compact `.cact` model through the Needle native C ABI | Small local deployment with a compatible native shared library |
 | **Raw ONNX** | `MLNet.AudioInference.Onnx` | `OnnxWhisperTransformer` manages encoder, decoder, KV cache, and token sampling manually using standard ONNX Runtime | Full control — custom sampling strategies, KV cache inspection, or when you can't use the ORT GenAI model format |
 
 **This package is the middle of the spectrum.** It's simpler than raw ONNX (no manual KV cache, no decoder loop code) but less flexible (requires the ORT GenAI model format, can't customize sampling). For most local Whisper deployments, it's the right choice.
